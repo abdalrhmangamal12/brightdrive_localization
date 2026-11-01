@@ -1,0 +1,7 @@
+build/
+install/
+log/
+*.csv
+.vscode/
+.cache/
+compile_commands.json
