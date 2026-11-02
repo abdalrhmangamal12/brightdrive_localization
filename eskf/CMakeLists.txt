@@ -11,7 +11,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 # NO_SYSTEM_ENVIRONMENT_PATH: do not derive search prefixes from $PATH. A conda/pixi bin dir on PATH would
 # otherwise shadow the system package with one built against a different libstdc++ (test binaries fail to load).
-find_package(Eigen3 3.3 REQUIRED NO_MODULE NO_SYSTEM_ENVIRONMENT_PATH)
+find_package(Eigen3 3.4.0 REQUIRED NO_MODULE NO_SYSTEM_ENVIRONMENT_PATH)
 
 # ---- library: every .cpp in src/ (header-only until the first .cpp exists) ----------------------------------
 file(GLOB ESKF_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
