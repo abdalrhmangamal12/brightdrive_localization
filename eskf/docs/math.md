@@ -92,6 +92,7 @@ Notation map to Solà:
 | $\operatorname{Exp}(\theta)$ | $q\{\theta\}$ | rotation from a rotation vector: as a quaternion (`ExpQ`) or as a $3 \times 3$ matrix (`ExpSO3`) |
 | $a_c = \tilde a - b_a,\ \ \omega_c = \tilde\omega - b_g$ | — | bias-corrected ("clean") readings, IMU axes |
 | $X_{\delta x} = \mathrm{blockdiag}(I_6, Q_{\delta\theta}, I_6)$ | $\mathrm{blockdiag}(I_6, Q_{\delta\theta}, I_9)$ | Solà's $I_9$ includes $\delta g$; there is no $\delta g$ here |
+| $z$ | $y$ | the measurement, the raw sensor reading |
 
 ---
 
@@ -687,15 +688,15 @@ When a measurement arrives, prediction has been run up to its time, and the filt
 error mean $\hat{\delta x} = 0$ (15) and $P$ (15×15).
 
 $$
-y = h(x_t) + v, \qquad v \sim \mathcal N(0, V) \qquad \text{(eq. 272–273)}
+z = h(x_t) + v, \qquad v \sim \mathcal N(0, V) \qquad \text{(eq. 272–273)}
 $$
 
-$y$ is the measurement itself, not the innovation. $h$ maps the true state to what the sensor should read. $V$ is the
+$z$ is the measurement itself, not the innovation. $h$ maps the true state to what the sensor should read. $V$ is the
 measurement noise covariance.
 
 $$
 K = P\,H^\top\left(H\,P\,H^\top + V\right)^{-1}, \qquad
-\hat{\delta x} \leftarrow K\left(y - h(\hat x_t)\right), \qquad
+\hat{\delta x} \leftarrow K\left(z - h(\hat x_t)\right), \qquad
 P \leftarrow (I - K H)\,P \qquad \text{(eq. 274–276)}
 $$
 
@@ -832,7 +833,7 @@ $$
 *Predicted reading from the nominal, since $\hat{\delta x} = 0$.*
 
 $$
-r = y - \hat z \qquad (3 \times 1)
+r = z - \hat z \qquad (3 \times 1)
 $$
 
 *Innovation.*
@@ -845,10 +846,10 @@ $$
 filter) or $V$ is large (noisy sensor), a large $r$ is normal.*
 
 $$
-d^2 = r^\top S^{-1} r, \qquad d^2 > 7.81 \ \Rightarrow\ \text{reject the fix}
+d^2 = r^\top S^{-1} r, \qquad d^2 > 11.34 \ \Rightarrow\ \text{reject the fix}
 $$
 
-*Chi-square gate, 3 degrees of freedom, 95 % (11.34 for 99 %). $d^2$ measures $r$ in units of its own expected
+*Chi-square gate, 3 degrees of freedom, 99 % (7.81 for 95 %). $d^2$ measures $r$ in units of its own expected
 spread. Too large means an outlier (multipath, jump): skip the update, keep predicting, log the rejected fix.*
 
 $$
@@ -931,13 +932,13 @@ every IMU sample (ã_k, ω̃_k, t_k)                                            
   b_a, b_g unchanged ;   t_last = t_k
   (error mean stays 0: not computed)
 
-every GNSS fix (y, V, t)                                                     §8, §9
+every GNSS fix (z, V, t)                                                     §8, §9
   predict with IMU up to t
   ẑ  = p + R·ℓ
-  r  = y − ẑ
+  r  = z − ẑ
   H  = [ I   0   −R·[ℓ]×   0   0 ]
   S  = H P Hᵀ + V
-  d² = rᵀ S⁻¹ r ;   if d² > 7.81: log, return
+  d² = rᵀ S⁻¹ r ;   if d² > 11.34: log, return
   K  = P Hᵀ S⁻¹                            solve, no explicit inverse
   δx̂ = K·r
   A  = I − K H ;   P ← A P Aᵀ + K V Kᵀ ;   P ← ½(P + Pᵀ)

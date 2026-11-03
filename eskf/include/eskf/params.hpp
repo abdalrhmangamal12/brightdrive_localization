@@ -33,7 +33,7 @@ struct Params {
   // GNSS antenna position relative to the IMU, in IMU axes [m].
   Eigen::Vector3d lever_arm = Eigen::Vector3d::Zero();
 
-  // Chi-square gate on the GNSS innovation (3 DOF, 95 %).
-  double gate = 7.81;
+  // Chi-square gate on the GNSS innovation (3 DOF, 99 %).
+  double gate = 11.34;
 };
 }  // namespace eskf

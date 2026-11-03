@@ -9,15 +9,13 @@ It is the core of the localization pipeline; the ROS 2 node and the LiDAR-to-map
 
 | Version | Content | Status |
 |---|---|---|
-| v1 | IMU predict + GNSS update (gate, Joseph form, lever arm) | in progress |
+| v1 | IMU predict + GNSS update (gate, Joseph form, lever arm, reset Jacobian G) | in progress |
 | v2 | LiDAR-to-map (NDT) pose update `correctPose()` | planned |
-| v3 | delayed-measurement buffer, reset Jacobian G | optional |
+| v3 | delayed-measurement buffer | optional |
 
 ---
 
 ## 1. Design
-
-![ESKF class diagram](docs/img/eskf_class_diagram.png)
 
 ```mermaid
 classDiagram
@@ -55,6 +53,7 @@ classDiagram
 
     class Params {
         <<struct>>
+        +noise_model : optional~NoiseModel~
         +sigma_a : double
         +sigma_g : double
         +sigma_ba : double
@@ -74,7 +73,7 @@ classDiagram
     class GnssMeas {
         <<struct>>
         +t : double
-        +y : Vector3d
+        +z : Vector3d
         +V : Matrix3d
     }
 
@@ -129,62 +128,13 @@ classDiagram
 | F inputs | R, b_a, b_g at the **start** of the step → build F before updating the nominal |
 | Δt | from timestamps, never hard-coded |
 | noise names | Q = process (IMU), V = measurement (GNSS) |
-| notation vs Solà | ã, ω̃, b_a, b_g = Solà's a_m, ω_m, a_b, ω_b; Exp(·) = Solà's q{·} |
+| notation vs Solà | ã, ω̃, b_a, b_g = Solà's a_m, ω_m, a_b, ω_b; Exp(·) = Solà's q{·}; z (measurement) = Solà's y |
 
 ---
 
 ## 3. Equations implemented
 
-### Helpers
-```
-skew(a) = [  0   −a_z   a_y ;  a_z   0   −a_x ;  −a_y   a_x   0 ]
-ExpQ(θ) = [cos(|θ|/2), (θ/|θ|) sin(|θ|/2)]      |θ| < 1e-8 → [1, θ/2], normalize
-ExpSO3(θ) = rotation matrix of ExpQ(θ)
-```
-
-### Predict — every IMU sample
-```
-R = R(q)  (old q)      a_c = ã − b_a      ω_c = ω̃ − b_g      Δt = t − t_last
-
-F = I₁₅, then
-  F[δp , δv ]  =  I·Δt
-  F[δv , δθ ]  = −R·skew(a_c)·Δt
-  F[δv , δb_a] = −R·Δt
-  F[δθ , δθ ]  =  ExpSO3(−ω_c·Δt)
-  F[δθ , δb_g] = −I·Δt
-
-Q = 0, then
-  Q[δv]   = σ_a²·Δt·I      Q[δθ]   = σ_g²·Δt·I
-  Q[δb_a] = σ_ba²·Δt·I     Q[δb_g] = σ_bg²·Δt·I
-  (CARLA per-reading std s: σ²·Δt = (s·Δt)²)
-
-P ← F P Fᵀ + Q
-
-a = R·a_c + g
-p ← p + v·Δt + ½·a·Δt²        (old v)
-v ← v + a·Δt
-q ← (q ⊗ ExpQ(ω_c·Δt)).normalized()
-b_a, b_g unchanged
-```
-
-### Correct — every GNSS fix (y in map metres, V 3×3, lever arm ℓ)
-```
-ẑ = p + R·ℓ          r = y − ẑ          H = [ I₃  0  −R·skew(ℓ)  0  0 ]   (3×15)
-
-applyCorrection(r, H, V):
-  S  = H P Hᵀ + V
-  d² = rᵀ S⁻¹ r ;  d² > gate (7.81, 3 DOF 95 %) → reject, return
-  K  = P Hᵀ S⁻¹                              (solve, no explicit inverse)
-  δx̂ = K·r
-  A  = I − K H ;  P ← A P Aᵀ + K V Kᵀ ;  P ← ½(P + Pᵀ)
-  inject:  p += δp̂   v += δv̂   q ← (q ⊗ ExpQ(δθ̂)).normalized()   b_a += δb̂_a   b_g += δb̂_g
-  reset:   δx̂ = 0 ;  P ← G P Gᵀ with G ≈ I  (v1)
-```
-
-### Guards
-- `predict()` before `initialize()` → only store `t_last`.
-- Δt ≤ 0 → skip; Δt > 5× nominal → warn and clamp.
-- Params checked in the constructor (σ > 0, gate > 0).
+Full derivation: [docs/math.md](docs/math.md)
 
 ---
 
@@ -196,7 +146,7 @@ cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
-Needs Eigen 3.3+ (`sudo apt install libeigen3-dev`). GTest is used from the system if present
+Needs Eigen 3.4.0+ (`sudo apt install libeigen3-dev`). GTest is used from the system if present
 (`libgtest-dev`), otherwise downloaded by CMake.
 
 | # | Test file | Checks | Pass |

@@ -42,7 +42,7 @@ struct ImuSample {
 // GNSS position already converted to the world frame.
 struct GnssMeas {
   double t = 0.0;
-  Eigen::Vector3d y = Eigen::Vector3d::Zero();  // [m]
+  Eigen::Vector3d z = Eigen::Vector3d::Zero();  // [m]
   // covariance [m^2], not std. Zero = "not set": correctGnss() rejects it.
   Eigen::Matrix3d V = Eigen::Matrix3d::Zero();
 };
