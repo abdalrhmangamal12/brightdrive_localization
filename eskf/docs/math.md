@@ -58,7 +58,7 @@ Because $\delta x$ has 15 entries, the covariance $P$ is $15 \times 15$.
 | gyroscope bias | $\delta b_g$ | 3 | 12–14 | `kBg = 12` |
 
 ```cpp
-static constexpr int kP = 0, kV = 3, kTh = 6, kBa = 9, kBg = 12;
+inline constexpr int kP = 0, kV = 3, kTh = 6, kBa = 9, kBg = 12;  // types.hpp, one per line
 ```
 
 Sizes: nominal 16 · error 15 · $P$ 15×15 · $F$ 15×15 · $Q$ 15×15 · $H$ 3×15 · $K$ 15×3.
@@ -900,8 +900,7 @@ G = \mathrm{blockdiag}\!\left(I_6,\ \ I - \left[\tfrac12\,\hat{\delta\theta}\rig
 $$
 
 *After injection the error is measured from the new nominal, whose axes turned by $\hat{\delta\theta}$, so the
-$\delta\theta$ part of $P$ is rotated by half of it. $\hat{\delta\theta}$ is tiny, so $G \approx I$: v1 uses
-$G = I$ and skips this step.*
+$\delta\theta$ part of $P$ is rotated by half of it. $\hat{\delta\theta}$ is tiny, so $G \approx I$; the code applies the exact $G$ anyway in `reset(dtheta)`, since it costs one 15×15 product.*
 
 ---
 
@@ -943,5 +942,5 @@ every GNSS fix (z, V, t)                                                     §8
   δx̂ = K·r
   A  = I − K H ;   P ← A P Aᵀ + K V Kᵀ ;   P ← ½(P + Pᵀ)
   inject:  p += δx̂[kP] ;  v += δx̂[kV] ;  q ← (q ⊗ Exp(δx̂[kTh])).normalized() ;  b_a += δx̂[kBa] ;  b_g += δx̂[kBg]
-  reset:   δx̂ = 0 ;   P ← G P Gᵀ with G = I (v1)
+  reset:   δx̂ = 0 ;   P ← G P Gᵀ ,  G = blockdiag(I₆, I − [½δθ̂]×, I₆)
 ```

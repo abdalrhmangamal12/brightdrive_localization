@@ -5,7 +5,7 @@ It is the core of the localization pipeline; the ROS 2 node and the LiDAR-to-map
 
 **Reference:** J. Solà, *Quaternion kinematics for the error-state Kalman filter*, arXiv:1711.02508 —
 §5.3 (continuous kinematics), §5.4 (discrete time, F, Q), §6.1 (observation, H = H_x·X_δx), §6.2 (injection),
-§6.3 (reset). Equations below are written in my notation; differences from Solà are listed in §2.
+§6.3 (reset). Equations are in [docs/math.md](docs/math.md), in my notation; differences from Solà are listed in §2.
 
 | Version | Content | Status |
 |---|---|---|
@@ -28,16 +28,15 @@ classDiagram
         -t_last_ : double
         -initialized_ : bool
         +Eskf(p : const Params ref)
-        +initialize(x0 : const NominalState ref, P0 : const Matrix15d ref) void
+        +initialize(x0 : const NominalState ref, P0 : const Matrix15d ref, t0 : double) void
         +predict(imu : const ImuSample ref) void
         +correctGnss(z : const GnssMeas ref) UpdateResult
         +state() const NominalState ref
         +covariance() const Matrix15d ref
-        +isInitialized() const bool
-        -buildF(a_c : Vector3d, w_c : Vector3d, dt : double) Matrix15d
-        -buildQ(dt : double) Matrix15d
+        +time() const double
+        +initialized() const bool
         -integrateNominal(a_c : Vector3d, w_c : Vector3d, dt : double) void
-        -applyCorrection(r : VectorXd, H : MatrixXd, V : MatrixXd) UpdateResult
+        -applyCorrection~M~(r : VectorM, H : MatrixMx15, V : MatrixM, gate : double) UpdateResult
         -inject(dx : Vector15d) void
         -reset(dtheta : Vector3d) void
     }
@@ -81,7 +80,7 @@ classDiagram
         <<struct>>
         +accepted : bool
         +d2 : double
-        +innovation : Vector3d
+        +innovation : VectorXd
     }
 
     class So3 {
@@ -96,18 +95,27 @@ classDiagram
         +run() NominalState + P0
     }
 
+    class Model {
+        <<free functions, model.hpp>>
+        +buildF(R, a_c, w_c, dt)$ Matrix15d
+        +buildQ(params, dt)$ Matrix15d
+        +buildHGnss(R, lever_arm)$ Matrix3x15
+    }
+
     Eskf "1" *-- "1" Params : owns
     Eskf "1" *-- "1" NominalState : owns
     Eskf ..> ImuSample : parameter
     Eskf ..> GnssMeas : parameter
     Eskf ..> UpdateResult : returns
-    Eskf ..> So3 : static calls
-    Initializer ..> Eskf : initialize(x0, P0)
+    Model <.. Eskf : F, Q, H
+    So3 <.. Eskf : static calls
+    So3 <.. Model : skew, ExpSO3
+    Initializer ..> Eskf : initialize(x0, P0, t0)
     Initializer ..> NominalState : creates x0
 ```
 
 - `Eskf` remembers only **x (nominal), P, Params, t_last, initialized**. F, Q, H, S, K, δx̂ are locals.
-- Structs are plain data; `So3` is stateless math (static); the initializer lives outside and calls `initialize(x0, P0)`.
+- Structs are plain data; `So3` is stateless math (static); the initializer lives outside and calls `initialize(x0, P0, t0)`.
 - `applyCorrection(r, H, V)` holds the sensor-independent part of every update (S, gate, K, Joseph, inject, reset);
   each `correctXxx()` only builds r, H, V.
 - Not thread-safe: the caller (ROS node) serializes calls. The caller also runs `predict()` up to a measurement's
@@ -153,20 +161,21 @@ Needs Eigen 3.4.0+ (`sudo apt install libeigen3-dev`). GTest is used from the sy
 |---|---|---|---|
 | 1 | `test_so3.cpp` | Exp(0) = I · 90° yaw · skew(a)·v = a × v · tiny-angle branch | 1e-12 |
 | 2 | `test_nominal.cpp` | level still (0,0,9.81) · tilted 10° still · yaw 0.1 rad/s for 1 s → 5.73° · sheet example: p_y 10.0250125, v_y 5.005, yaw 90.057° | p, v unchanged / values |
-| 3 | `test_jacobian.cpp` | F vs numerical Jacobian: nudge each of 15 error states by 1e-6 | max diff ≈ 1e-6 |
+| 3 | `test_jacobian.cpp` | F vs numerical Jacobian: nudge each of 15 error states by 1e-6 | < 1e-6 at Δt 1e-4 · < 2e-4 at 200 Hz (F drops the ½·a·Δt² terms) |
 | 4 | `test_predict.cpp` | P symmetric, grows, positive definite | eigenvalues > 0 |
 | 5 | `test_update.cpp` | 1-axis case P 0.25, V 0.09, P_vp 0.05, r 0.4 → K_p 0.735, δp 0.294, δv 0.0588, P_pp 0.0662 · r = 2 m → gated (d² 11.8) | values |
 | 6 | `test_synthetic.cpp` | simulated truth + noisy IMU/GNSS | error inside ±2σ ~95 %, NEES ≈ 15 |
+| 7 | `test_model.cpp` | Q entries for both noise models · H blocks · buildQ rejects an unset noise model | values |
 
 ---
 
 ## 5. Progress (one commit per row)
 
-- [ ] build: CMake + GTest skeleton, setup test passes
-- [ ] types + params + So3, test 1
-- [ ] integrateNominal, test 2
-- [ ] buildF, test 3
-- [ ] buildQ + predict, test 4
-- [ ] applyCorrection + correctGnss, test 5
+- [x] build: CMake + GTest skeleton, setup test passes
+- [x] types + params + So3, test 1
+- [x] integrateNominal, test 2
+- [x] buildF, test 3
+- [x] buildQ + predict, test 4
+- [x] applyCorrection + correctGnss, test 5
 - [ ] synthetic run, test 6 → tag `eskf-v1`
 - [ ] offline run on a CARLA bag (CSV) → first error plot

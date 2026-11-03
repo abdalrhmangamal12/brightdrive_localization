@@ -51,7 +51,7 @@ struct GnssMeas {
 struct UpdateResult {
   bool accepted = false;
   double d2 = 0.0;
-  Eigen::Vector3d innovation = Eigen::Vector3d::Zero();  // v2: VectorXd
+  Eigen::VectorXd innovation;  // size of the measurement: 3 for GNSS
 };
 
 }  // namespace eskf

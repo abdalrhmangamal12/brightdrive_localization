@@ -28,14 +28,16 @@ class Eskf {
   bool initialized() const { return initialized_; }
 
  private:
-  friend struct EskfTestAccess;  // white-box access for test/test_jacobian.cpp
+  // F, Q and H come from eskf/model.hpp; the filter only owns the state.
 
-  Matrix15d buildF(const Eigen::Matrix3d& R, const Eigen::Vector3d& a_c,
-                   const Eigen::Vector3d& w_c, double dt) const;
-
-  // Process noise Fi Qi Fi^T for this dt.
-  // sigma_a, sigma_g scale with dt^2; sigma_ba, sigma_bg with dt.
-  Matrix15d buildQ(double dt) const;
+  // Sensor-independent half of every update (math.md 8.6, 9): S = H P H^T + V
+  // by Cholesky, chi-square gate, K, Joseph form, inject, reset. M is the
+  // measurement size; each correctXxx() only builds r, H, V and picks the gate.
+  template <int M>
+  UpdateResult applyCorrection(const Eigen::Matrix<double, M, 1>& r,
+                               const Eigen::Matrix<double, M, 15>& H,
+                               const Eigen::Matrix<double, M, M>& V,
+                               double gate);
   void integrateNominal(const Eigen::Vector3d& a_c, const Eigen::Vector3d& w_c,
                         double dt);
   // x <- x (+) dx: p += dp, v += dv, q = q * Exp(dtheta) then normalize,

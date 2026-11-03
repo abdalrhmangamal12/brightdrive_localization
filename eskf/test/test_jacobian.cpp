@@ -1,18 +1,8 @@
-// README test 3: buildF against a numerical Jacobian of one predict() step.
+// README test 3: buildF (model.hpp) against a numerical Jacobian of predict().
 #include <gtest/gtest.h>
 
+#include "eskf/model.hpp"
 #include "test_helpers.hpp"
-
-namespace eskf {
-// White-box access declared as a friend in eskf.hpp.
-struct EskfTestAccess {
-  static Matrix15d buildF(const Eskf& f, const Eigen::Matrix3d& R,
-                          const Eigen::Vector3d& a_c,
-                          const Eigen::Vector3d& w_c, double dt) {
-    return f.buildF(R, a_c, w_c, dt);
-  }
-};
-}  // namespace eskf
 
 namespace {
 
@@ -37,8 +27,8 @@ double maxJacobianError(double dt) {
 
   Eskf f(goodParams());
   f.initialize(x, P0, 0.0);
-  const Matrix15d F = eskf::EskfTestAccess::buildF(
-      f, x.q.toRotationMatrix(), acc - x.b_a, gyro - x.b_g, dt);
+  const Matrix15d F =
+      eskf::buildF(x.q.toRotationMatrix(), acc - x.b_a, gyro - x.b_g, dt);
   f.predict(imu);
 
   const double eps = 1e-6;
