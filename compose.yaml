@@ -1,4 +1,4 @@
-# CARLA 0.9.15 server. Run compose from this directory (it reads ./.env).
+# All services. Run compose from the repo root (it reads ./.env).
 name: brightdrive
 
 services:
@@ -24,18 +24,18 @@ services:
   ros:
     build:
       context: .
-      dockerfile: Dockerfile.ros
+      dockerfile: docker/Dockerfile
     image: brightdrive/ros:dev
     network_mode: host
     ipc: host
     init: true
     user: "${UID}:${GID}"
     environment:
-      ROS_DOMAIN_ID: ${SIM_ROS_DOMAIN_ID}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID}
       ROS_LOCALHOST_ONLY: "1"
       HOME: /tmp           # user 1000 has no passwd entry; the CARLA client caches maps under $HOME, ROS logs there too
     volumes:
-      - ../..:/ws/src/brightdrive_localization
+      - .:/ws/src/brightdrive_localization
       - ${BAGS_DIR}:/ws/bags
     depends_on:
       carla-server:

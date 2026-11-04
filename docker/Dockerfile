@@ -1,4 +1,4 @@
-# sim/docker/Dockerfile.ros — ROS 2 Humble + the CARLA 0.9.15 Python API. Later steps add layers at the bottom.
+# docker/Dockerfile — ROS 2 Humble + the CARLA 0.9.15 Python API. Later steps add layers at the bottom.
 # Why Humble (Ubuntu 22.04, Python 3.10): the task requires Humble, and CARLA 0.9.15 publishes Linux wheels for
 # Python 3.7-3.10 only.
 FROM ros:humble-ros-base-jammy
