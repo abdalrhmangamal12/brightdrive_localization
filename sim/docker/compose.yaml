@@ -19,3 +19,25 @@ services:
       retries: 3
       start_period: 180s
     restart: "no"        # a crash stays visible instead of restarting
+
+  # ROS 2 Humble + CARLA Python API. Starts after the server is healthy; sits idle, you exec into it.
+  ros:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros
+    image: brightdrive/ros:dev
+    network_mode: host
+    ipc: host
+    init: true
+    user: "${UID}:${GID}"
+    environment:
+      ROS_DOMAIN_ID: ${SIM_ROS_DOMAIN_ID}
+      ROS_LOCALHOST_ONLY: "1"
+      HOME: /tmp           # user 1000 has no passwd entry; the CARLA client caches maps under $HOME, ROS logs there too
+    volumes:
+      - ../..:/ws/src/brightdrive_localization
+      - ${BAGS_DIR}:/ws/bags
+    depends_on:
+      carla-server:
+        condition: service_healthy
+    command: sleep infinity
