@@ -1,0 +1,124 @@
+# Every scenario of the task in ONE file. To change a scenario: edit here, then run
+#   python3 sim/scenarios/make_scenarios.py     (rewrites the .xosc files)
+# Positions are in the ROS map frame (CARLA world with y flipped): x east-ish, y north-ish, metres.
+
+# The one town used for everything (mapping drive and all tests).
+town: Town03
+
+# The world tick in synchronous mode, seconds. Every sensor hangs on it: the IMU measures once per tick (100 Hz
+# at 0.01 s), the LiDAR returns the slice of its revolution that the tick covers (72° at 0.01 s with
+# rotation_frequency 20; the bridge assembles 5 slices into one 20 Hz sweep, sensors.yaml assemble_sweeps).
+# ScenarioRunner, the tick pacing and the bridge read it from here; for one run: run.sh nominal --tick 0.05.
+# Decision of 2026-11-02 (docs/decisions.md section 2, after the first ESKF run): 0.01 s for a 100 Hz IMU.
+# Real-time: no recording holds 1x; record with --speed 0.5.
+tick_s: 0.01
+
+# Routes: a few points you choose (from sim/scenarios/routes/Town03.png). The car drives from point to
+# point along the roads, then back to the first point (a closed loop, unless `closed: false`). make_route.py
+# fills in the roads between.
+routes:
+  # The loop through the city: the mapping drive and every test use it, so every test stays on mapped roads.
+  # It has many 90-degree turns, a roundabout and one extra block (the planner's way to turn at point 3).
+  main:
+    points: [[100, -4], [150, 70], [90, 137], [-50, 137], [-90, 60], [-50, -131], [-2, -80]]
+    # The section reserved for reverse-direction localization (task PDF section 1): route waypoints 248..299
+    # = route point 5 -> 6 -> 7, 323 m with two 90-degree turns. Mapping drives the loop forward only, so this
+    # section is never mapped in the reverse direction; `reverse_reuse` drives it the other way.
+    # Picture: sim/scenarios/routes/reserved_reverse.png. Check: eval/check_reverse_section.py.
+    reserved_reverse: [248, 299]
+  # The reserved section the other way round, as an open route (point 7 -> 6 -> 5 of `main`): planned on the
+  # lanes of the opposite direction.
+  reverse_section:
+    points: [[-2, -80], [-50, -131], [-90, 60]]
+    closed: false
+    # These points sit on roads with a median; the lanes of the wanted direction are across it.
+    snap_across_median: true
+
+# The values every scenario starts from. Each scenario below lists only what it changes.
+defaults:
+  # Which route to drive (a name from `routes` above).
+  route: main
+  # Drive the loop the other way round (uses the planned main_reverse route, i.e. the other lanes).
+  reverse: false
+  # How many times around the loop (closed routes only).
+  laps: 1
+  # Where on the route the car starts: index of a route waypoint (one every 5 m; 0 = the route's first point).
+  start_at: 0
+  # Seconds the car stands still at the start before it drives: the estimator's still window for IMU
+  # initialization and the gravity check (and the time the initial pose, if any, is published). .xosc
+  # parameter StartDelay. 5 s = 3 s of settled readings after the spawn drop of the first ~0.5 s.
+  start_delay_s: 5.0
+  # Target speed of our car, m/s (8 m/s = 29 km/h). .xosc parameter Speed.
+  speed: 8.0
+  # Target speed where `speed_profile` says "slow" (before turns). .xosc parameter TurnSpeed.
+  turn_speed: 8.0
+  # Speed changes along the route: [[metres driven, fast | slow], ...] (fast = Speed, slow = TurnSpeed).
+  # Empty = Speed all the way.
+  speed_profile: []
+  # Sudden steering: lane changes [[metres driven, left | right, metres the change takes], ...]. Only on roads
+  # with a second lane in that direction; the car rejoins the route after.
+  lane_changes: []
+  # Stop at red lights (true) or drive through them (false: no waiting, shorter runs).
+  obey_traffic_lights: false
+  # Number of other cars, driven by CARLA's Traffic Manager. They start on spawn points near the route.
+  traffic: 0
+  # "Near the route" for the traffic cars' start points: at most this far from a route waypoint, metres.
+  traffic_max_dist_m: 40.0
+  # Weather preset: clear | rain | fog | night.
+  weather: clear
+  # GNSS random error (1 sigma), metres. The bridge converts it to CARLA's noise in degrees.
+  gnss_noise_m: 0.3
+  # GNSS constant offset, metres (the same on latitude and longitude).
+  gnss_bias_m: 0.0
+  # GNSS outage, made by the gate at the ROS 2 input (sim/gnss_gate/gnss_gate.py): /gnss/fix_gated carries
+  # nothing from start to start + duration (seconds after the first fix). Duration 0 = no outage.
+  gnss_outage_start_s: 0.0
+  gnss_outage_duration_s: 0.0
+  # Initial pose for re-localization (eval/initial_pose_publisher.py publishes /initialpose = true pose + this
+  # offset, once, at the start). null = nothing is published (the estimator starts from GNSS).
+  init_offset_m: null
+  # Direction of the position offset relative to the car's true heading, degrees (0 = ahead, 90 = left), or
+  # `random` (drawn from `seed`, together with the sign of the heading offset).
+  init_offset_dir_deg: 45.0
+  # Heading (yaw) offset of the initial pose, degrees.
+  init_heading_offset_deg: 30.0
+  # Seed for `random` choices (initial pose direction).
+  seed: 0
+  # Stop after this many simulated seconds (0 = no limit: the run ends when the route is done).
+  time_limit_s: 0
+
+# The task's runs (final task PDF section 1 "Mapping" and section 3), in this order. Run one with:
+#   sim/scripts/run.sh <name>          all of them: sim/scripts/run_all.sh
+scenarios:
+  # Mapping drive: the loop twice, forward only ("overlapping passes"; the reserved section stays unmapped in the
+  # reverse direction). Some traffic, so the map builder has moving cars to remove (traffic: 0 = empty town).
+  mapping: {laps: 2, traffic: 10}
+  # Baseline: low GNSS noise, clear weather, no traffic.
+  nominal: {}
+  # Nominal + a 30 s GNSS outage 60 s in, then 60 s of recovery (time limit 150 s).
+  gnss_outage: {gnss_outage_start_s: 60.0, gnss_outage_duration_s: 30.0, time_limit_s: 150}
+  # Re-localization: starts mid-route (waypoint 170, about 1030 m along the loop, on a straight), stands still
+  # 3 s, /initialpose = true pose + 5 m at 45 degrees + 30 degrees of heading; 120 s.
+  relocalization: {start_at: 170, init_offset_m: 5.0, init_offset_dir_deg: 45.0, init_heading_offset_deg: 30.0,
+                   time_limit_s: 120}
+  # Many cars around ours: occlusions for map matching (eval/traffic_proximity.py counts how many come close).
+  dense_traffic: {traffic: 40}
+  # High speed with sudden steering: 15 m/s (54 km/h) on the long straights (0-75 m, 1230-1365 m, 1462-1630 m,
+  # 1940 m-end), 8 m/s (= nominal) elsewhere: the 90-degree turns start at 115, 1408, 1673 m and the slow trigger
+  # sits 40 m before each (the braking distance from 15 m/s); at 9 m/s the car touched the road mesh at the
+  # overpass corner (912 m), at 8 m/s it does not. Two lane changes over 20 m at 15 m/s on the
+  # two-lane straight of road 3 (1453-1555 m): left at 1470 m, left again at 1520 m, rejoining the route after
+  # each. Distances are route metres Peaks: eval/plots/high_speed_profile.png.
+  high_speed_turns:
+    speed: 15.0
+    turn_speed: 8.0
+    speed_profile: [[0, fast], [75, slow], [1230, fast], [1365, slow], [1462, fast], [1630, slow], [1940, fast]]
+    lane_changes: [[1470, left, 20], [1520, left, 20]]
+  # Reverse-direction map reuse: only the reserved section, driven the other way (open route, 3 route points).
+  reverse_reuse: {route: reverse_section}
+
+# Optional runs, listed after the required ones by run.sh. Same format.
+extras:
+  # NOT USED for the task: it maps the whole loop in reverse, which would break the rule that the reserved
+  # section is never traversed in that direction during mapping. Kept for a map-quality experiment only.
+  mapping_reverse: {traffic: 10, reverse: true}

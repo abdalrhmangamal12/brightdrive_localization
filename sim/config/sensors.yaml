@@ -1,0 +1,152 @@
+# Our car and its sensors: the ONE place where sensor positions and settings live.
+# Every script that spawns sensors, and the /tf_static the bridge will publish, read this file.
+#
+# Positions are in the ROS frame base_link: x forward, y left, z up (metres).
+# Rotations are roll, pitch, yaw in degrees. base_link = the car's origin (CARLA: centre of the car, on the ground).
+# CARLA itself uses y RIGHT; the scripts flip y (and pitch, yaw) when they spawn a sensor.
+
+# ---------------------------------------------------------------------------------------------------------------
+# The car under test ("hero" / "ego vehicle").
+hero:
+  # Which car model to spawn: a CARLA blueprint name.
+  blueprint: vehicle.lincoln.mkz_2020
+  # A name tag stored on the car inside CARLA. Every other script (bridge, ground truth, ScenarioRunner) finds
+  # "our car" by searching for this tag.
+  role_name: hero
+
+# ---------------------------------------------------------------------------------------------------------------
+# The sensors attached to the car. Each one has: a CARLA blueprint, a ROS frame name, where it sits on the car,
+# and its settings (CARLA "attributes").
+sensors:
+
+  # --- LiDAR: 3D points around the car --------------------------------------------------------------------------
+  lidar:
+    # CARLA's LiDAR model: it shoots laser rays and returns where they hit (x, y, z, intensity).
+    blueprint: sensor.lidar.ray_cast
+    # The ROS frame name of this sensor: header.frame_id of its messages and the child in base_link -> lidar.
+    frame_id: lidar
+    # The ROS 2 topic the bridge publishes it on (sensor_msgs/PointCloud2). CARLA gives x y z intensity only; the
+    # bridge adds time (s after the stamp, 0-0.04) and ring (0 = lowest beam -22.5 deg, 63 = highest +22.5 deg)
+    # and publishes in the Velodyne point layout; FAST-LIO2 reads it with its velodyne input, scan_line 64.
+    topic: /points_raw
+    # Delivery and queue. A sweep (~0.7 MB) is split into many fragments; with best_effort one lost fragment drops
+    # the whole sweep, and a missing sweep is a permanent hole in the recorded bag. Publisher offers reliable so
+    # the recorder gets every sweep; the localization subscriber uses best_effort depth 1 (newest sweep).
+    # Keep-last 2: never blocks.
+    queue_depth: 2
+    reliability: reliable
+    # Position on the car in metres (x forward, y left, z up from base_link): centred, 1.9 m up = on the roof.
+    xyz: [0.0, 0.0, 1.9]
+    # Orientation in degrees (roll, pitch, yaw): mounted level, facing forward.
+    rpy: [0.0, 0.0, 0.0]
+    # How many CARLA measurements make one published sweep. CARLA simulates one slice of the revolution per
+    # world tick: at tick_s 0.01 and rotation_frequency 20 that is a 72-degree slice, so 5 of them are one
+    # 360-degree sweep, published as ONE message (20 Hz) with a `time` field per point (seconds after the
+    # message stamp, 0 to 0.04) and a `ring` field (beam index). 1 = publish every measurement as it is (the
+    # whole sweep per tick at tick_s 0.05). Rule: rotation_frequency x tick_s x assemble_sweeps = 1.
+    assemble_sweeps: 5
+    # LiDAR settings, passed to CARLA as they are. Ouster OS1-64 geometry, 512x20 mode (0.7 deg horizontal steps).
+    attributes:
+      # Number of laser beams stacked vertically (64 rings).
+      channels: 64
+      # Maximum distance a ray can measure, in metres.
+      range: 100.0
+      # Spins per second: 20 = one sweep per 0.05 s. At tick_s 0.01 each tick returns a 72° slice and the bridge
+      # assembles 5 (assemble_sweeps above) into one sweep; the slices are 10 ms apart, so a moving car gives
+      # motion inside a sweep (deskew with the `time` field).
+      rotation_frequency: 20.0
+      # Rays per second over all beams: 64 beams x 512 columns x 20 sweeps = 655360.
+      points_per_second: 655360
+      # Angle of the highest beam, degrees above horizontal.
+      upper_fov: 22.5
+      # Angle of the lowest beam, degrees below horizontal (it sees the road close to the car).
+      lower_fov: -22.5
+      # CARLA's default deletes ~45% of points at random, which thins the cloud without being realistic; 0 keeps
+      # them all.
+      dropoff_general_rate: 0.0
+      # Random noise added to each measured distance, in metres: range noise of a real OS1-class sensor, 1-3 cm.
+      noise_stddev: 0.02
+
+  # --- IMU: acceleration and turn rate --------------------------------------------------------------------------
+  imu:
+    # CARLA's IMU model: accelerometer (m/s^2, includes gravity), gyroscope (rad/s) and compass.
+    blueprint: sensor.other.imu
+    # The ROS frame name of the IMU.
+    frame_id: imu
+    # The ROS 2 topic (sensor_msgs/Imu).
+    topic: /imu/data
+    # Standard sensor QoS; each sample is one ~300 B packet, so loss is rare; verified 0 lost samples on 3 Nov
+    # (IMU count = /clock count); the ESKF subscriber must use depth 200 and flag dt gaps > 1.5 x tick.
+    queue_depth: 200
+    reliability: best_effort
+    # IMU frame = base_link, no lever arm (simulation simplification).
+    xyz: [0.0, 0.0, 0.0]
+    # Orientation: aligned with base_link.
+    rpy: [0.0, 0.0, 0.0]
+    # Constant accelerometer bias the bridge adds, m/s^2 in ROS axes (x forward, y left, z up), after the
+    # CARLA -> ROS axis conversion: CARLA's IMU has no accelerometer bias of its own. Logged at startup.
+    bridge_accel_bias: [0.0, 0.0, 0.0]
+    # IMU settings. No sensor_tick here, so it measures at every tick (100 Hz at tick_s 0.01).
+    # The noise values are per READING: CARLA draws a new random error for every sample with this sigma.
+    # CARLA keeps the per-reading sigma fixed whatever the rate; a real IMU keeps the noise density fixed.
+    # Densities at 100 Hz: sigma x sqrt(dt) = 0.005 m/s^2/sqrt(Hz) and 0.0005 rad/s/sqrt(Hz).
+    # The ESKF takes one form, never both; if the tick changes, Q changes.
+    attributes:
+      # Random noise on the gyroscope (turn rate) around x, in rad/s.
+      noise_gyro_stddev_x: 0.005
+      # Same, around y.
+      noise_gyro_stddev_y: 0.005
+      # Same, around z (the yaw rate, the one that matters most for a car).
+      noise_gyro_stddev_z: 0.005
+      # Random noise on the accelerometer along x, in m/s^2.
+      noise_accel_stddev_x: 0.05
+      # Same, along y.
+      noise_accel_stddev_y: 0.05
+      # Same, along z.
+      noise_accel_stddev_z: 0.05
+      # Constant turn-on bias of the gyroscope, in rad/s (~0.1 deg/s on yaw); CARLA has no accel bias; the ESKF
+      # estimates b_g from the 5 s still window at the start of every scenario.
+      noise_gyro_bias_x: 0.001
+      noise_gyro_bias_y: 0.001
+      noise_gyro_bias_z: 0.002
+      # Seed of the random noise: the same seed gives the same noise every run (repeatable tests).
+      noise_seed: 1
+
+  # --- GNSS: latitude, longitude, altitude ----------------------------------------------------------------------
+  gnss:
+    # CARLA's GNSS model: it turns the car's position into latitude/longitude using the town's geo-reference.
+    blueprint: sensor.other.gnss
+    # The ROS frame name of the antenna.
+    frame_id: gnss
+    # The ROS 2 topic the bridge publishes (sensor_msgs/NavSatFix): the raw fix, never interrupted.
+    topic: /gnss/fix
+    # The topic the ESTIMATOR subscribes: the same fixes after the GNSS gate (sim/gnss_gate/gnss_gate.py),
+    # which withholds them during a scenario's outage window. Same QoS as `topic`.
+    gated_topic: /gnss/fix_gated
+    # Keep up to 10 GNSS messages (1 s at 10 Hz).
+    queue_depth: 10
+    # Delivery: best_effort drops a message when the receiver can't keep up (the default for sensors);
+    # reliable resends lost pieces. Subscribers must ask for the same or weaker.
+    reliability: best_effort
+    # Position on the car: centred, 1.8 m up = antenna on the roof. 1.8 m lever arm: the ESKF GNSS model must
+    # predict p + R*(0,0,1.8).
+    xyz: [0.0, 0.0, 1.8]
+    # Orientation: does not matter for a position sensor; kept level.
+    rpy: [0.0, 0.0, 0.0]
+    # GNSS settings.
+    attributes:
+      # Seconds between measurements: 0.1 s = 10 Hz = every 10th tick at tick_s 0.01.
+      sensor_tick: 0.1
+      # Random noise: set per scenario in metres (gnss_noise_m, nominal 0.3); the bridge converts to degrees:
+      # sigma_deg = (sigma_m / R) x 180/pi, and sets noise_alt_stddev = sigma_m, so the published covariance
+      # diag(sigma^2) is true. The zeros here are overwritten by the scenario's value.
+      noise_lat_stddev: 0.0
+      noise_lon_stddev: 0.0
+      noise_alt_stddev: 0.0
+      # Constant offset; the only correlated GNSS error CARLA models. Set per scenario like the noise
+      # (gnss_bias_m, default 0), in the same degrees / metres.
+      noise_lat_bias: 0.0
+      noise_lon_bias: 0.0
+      noise_alt_bias: 0.0
+      # GNSS noise reproducible run to run; different from the IMU seed.
+      noise_seed: 2
