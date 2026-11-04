@@ -1,5 +1,12 @@
 # All services. Run compose from the repo root (it reads ./.env).
-name: brightdrive
+name: brightdrive   # fixed project name -> containers are named brightdrive-<service>-1
+
+# Environment of every ROS 2 container.
+x-ros-env: &ros-env
+  ROS_DOMAIN_ID: ${BD_ROS_DOMAIN_ID}           # from .env (own name: the shell's ROS_DOMAIN_ID would override it)
+  ROS_LOCALHOST_ONLY: "1"
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  FASTRTPS_DEFAULT_PROFILES_FILE: /etc/fastdds_shm.xml   # docker/fastdds_shm.xml, copied in at build
 
 services:
   carla-server:
@@ -12,6 +19,8 @@ services:
     init: true           # CarlaUE4.sh does not exec the binary; init forwards SIGTERM so `stop` is clean
     # Low quality segfaults on load_world('Town03') on this machine (exit 139); Epic works.
     command: ./CarlaUE4.sh -RenderOffScreen -quality-level=Epic -nosound -carla-rpc-port=2000
+    volumes:
+      - ./docker/UserEngine.ini:/home/carla/CarlaUE4/Config/UserEngine.ini:ro   # startup map = Town03
     healthcheck:         # healthy = the RPC port accepts TCP connections
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/2000"]
       interval: 5s
@@ -20,23 +29,24 @@ services:
       start_period: 180s
     restart: "no"        # a crash stays visible instead of restarting
 
-  # ROS 2 Humble + CARLA Python API. Starts after the server is healthy; sits idle, you exec into it.
-  ros:
+  # The CARLA side in ROS 2 Humble (docker/Dockerfile, stage sim). Starts after the server is healthy;
+  # sits idle, you exec into it.
+  sim:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    image: brightdrive/ros:dev
+      target: sim
+    image: brightdrive/sim:dev
     network_mode: host
     ipc: host
     init: true
     user: "${UID}:${GID}"
     environment:
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID}
-      ROS_LOCALHOST_ONLY: "1"
-      HOME: /tmp           # user 1000 has no passwd entry; the CARLA client caches maps under $HOME, ROS logs there too
+      <<: *ros-env
     volumes:
       - .:/ws/src/brightdrive_localization
-      - ${BAGS_DIR}:/ws/bags
+      - ${BAGS_DIR}:/bags
+      - /etc/machine-id:/etc/machine-id:ro   # same host id for Fast DDS -> shared memory between containers on any Fast DDS version
     depends_on:
       carla-server:
         condition: service_healthy

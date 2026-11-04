@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Fast DDS profile for the ROS 2 containers: shared memory + UDPv4 (the defaults), but with the shm segment
+  raised from 512 KiB to 64 MiB so several 2 MB point clouds fit in flight. Needs ipc: host on every container.
+  Loaded through FASTRTPS_DEFAULT_PROFILES_FILE (compose.yaml).
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <transport_descriptors>
+        <transport_descriptor>
+            <transport_id>shm_64mb</transport_id>
+            <type>SHM</type>
+            <!-- bytes; the default is 524288 (512 KiB), too small for several 2 MB clouds in flight -->
+            <segment_size>67108864</segment_size>
+        </transport_descriptor>
+        <transport_descriptor>
+            <transport_id>udpv4</transport_id>
+            <type>UDPv4</type>
+        </transport_descriptor>
+    </transport_descriptors>
+
+    <!-- is_default_profile="true": rmw_fastrtps applies this profile to every participant it creates -->
+    <participant profile_name="shm_and_udp_participant" is_default_profile="true">
+        <rtps>
+            <userTransports>
+                <transport_id>shm_64mb</transport_id>
+                <transport_id>udpv4</transport_id>
+            </userTransports>
+            <!-- false: the two transports above replace the built-in ones (same kinds, bigger segment) -->
+            <useBuiltinTransports>false</useBuiltinTransports>
+        </rtps>
+    </participant>
+</profiles>

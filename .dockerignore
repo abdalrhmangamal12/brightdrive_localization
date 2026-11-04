@@ -1,0 +1,5 @@
+# The build context is the repo root (compose.yaml): keep the large or irrelevant parts out of it.
+.git
+**/build
+data
+*.mcap
