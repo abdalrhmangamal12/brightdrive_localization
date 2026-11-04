@@ -1,0 +1,10 @@
+# Optional override: the server with a window on the host display, to look at the town.
+# Not loaded by default. Use:  docker compose -f compose.yaml -f compose.viz.yaml up -d
+services:
+  carla-server:
+    command: ./CarlaUE4.sh -quality-level=Epic -nosound -carla-rpc-port=2000 -windowed -ResX=1280 -ResY=720
+    environment:
+      DISPLAY: ${DISPLAY}
+      NVIDIA_DRIVER_CAPABILITIES: all        # adds 'display' to graphics,utility,compute
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw

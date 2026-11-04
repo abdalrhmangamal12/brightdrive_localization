@@ -1,0 +1,21 @@
+# CARLA 0.9.15 server. Run compose from this directory (it reads ./.env).
+name: brightdrive
+
+services:
+  carla-server:
+    image: carlasim/carla:0.9.15@sha256:1af47c314443f4a2d0869ac399c5b5eabde138a5bc39dd31dcbb1540e22f5588
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: graphics,utility,compute   # graphics = Vulkan, which UE4 renders with
+    network_mode: host   # RPC 2000, streaming 2001, secondary 2002 on the host
+    init: true           # CarlaUE4.sh does not exec the binary; init forwards SIGTERM so `stop` is clean
+    # Low quality segfaults on load_world('Town03') on this machine (exit 139); Epic works.
+    command: ./CarlaUE4.sh -RenderOffScreen -quality-level=Epic -nosound -carla-rpc-port=2000
+    healthcheck:         # healthy = the RPC port accepts TCP connections
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/2000"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 180s
+    restart: "no"        # a crash stays visible instead of restarting
