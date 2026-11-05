@@ -40,6 +40,14 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# The .xosc files are generated from sim.yaml, sensors.yaml and the routes: regenerate them when any of those is
+# newer than this scenario's file (or the file is missing), so an edit is never run with a stale scenario.
+XOSC=sim/scenarios/xosc/$SCENARIO.xosc
+if [ ! -f "$XOSC" ] || [ -n "$(find "$SIM_YAML" sim/config/sensors.yaml sim/scenarios/routes -name '*.yaml' -newer "$XOSC")" ]; then
+  python3 sim/scenarios/make_scenarios.py > /dev/null || { echo "make_scenarios.py failed"; exit 1; }
+  echo "regenerated .xosc files"
+fi
+
 # The server, if it is not running yet, then wait until its RPC port answers (healthy).
 if [ -z "$(docker compose ps -q --status running carla-server)" ]; then
   echo "starting carla-server ..."
