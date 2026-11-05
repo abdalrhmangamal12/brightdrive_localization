@@ -55,6 +55,11 @@ class RouteAgent(BasicControl):
             if self._route is None:
                 self._route = self._to_plan(self._waypoints)
                 self._agent.set_global_plan(self._route, stop_waypoint_creation=True, clean_queue=True)
+            elif not self._waypoints:
+                # ScenarioRunner could not plan the maneuver here (it prints "couldn't perform the expected lane
+                # change": e.g. no lane to change into at the change point) and sends an empty list: the route goes on.
+                print('route_agent: empty maneuver (ScenarioRunner could not plan it here): the route continues',
+                      flush=True)
             elif len(self._waypoints) <= MANEUVER_MAX_WAYPOINTS:
                 # The maneuver, then the rest of the route from the route point nearest to the maneuver's end.
                 maneuver = self._to_plan(self._waypoints)
