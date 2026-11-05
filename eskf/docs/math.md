@@ -42,7 +42,7 @@ rotation error for $q$ (Solà Table 3):
 $$
 p_t = p + \delta p, \qquad
 v_t = v + \delta v, \qquad
-q_t = q \otimes \operatorname{Exp}(\delta\theta), \qquad
+q_t = q \otimes \mathrm{Exp}(\delta\theta), \qquad
 b_{a,t} = b_a + \delta b_a, \qquad
 b_{g,t} = b_g + \delta b_g
 $$
@@ -70,7 +70,7 @@ Sizes: nominal 16 · error 15 · $P$ 15×15 · $F$ 15×15 · $Q$ 15×15 · $H$ 3
 | item | choice |
 |---|---|
 | quaternion | Hamilton, $(w, x, y, z)$, `Eigen::Quaterniond`, normalized after every multiply |
-| rotation error | local: $q_t = q \otimes \operatorname{Exp}(\delta\theta)$, multiplied on the **right** |
+| rotation error | local: $q_t = q \otimes \mathrm{Exp}(\delta\theta)$, multiplied on the **right** |
 | rotation matrix | $R = R(q) = {}^{\mathrm{world}}R_{\mathrm{imu}}$, IMU → world |
 | frames | "world" = the map frame. $p$, $v$, $g$ and GNSS positions live in it; IMU readings and biases are in IMU axes |
 | gravity | $g = (0, 0, -9.81)$, constant, **not** a state. Solà estimates $g$; his eq. 260f is dropped here |
@@ -89,7 +89,7 @@ Notation map to Solà:
 | $\delta b_a,\ \delta b_g$ | $\delta a_b,\ \delta\omega_b$ | bias errors |
 | $a_n,\ \omega_n$ | $a_n,\ \omega_n$ | white noise in the reading |
 | $a_w,\ \omega_w$ | $a_w,\ \omega_w$ | bias random-walk increments (subscript $w$ = walk) |
-| $\operatorname{Exp}(\theta)$ | $q\{\theta\}$ | rotation from a rotation vector: as a quaternion (`ExpQ`) or as a $3 \times 3$ matrix (`ExpSO3`) |
+| $\mathrm{Exp}(\theta)$ | $q\{\theta\}$ | rotation from a rotation vector: as a quaternion (`ExpQ`) or as a $3 \times 3$ matrix (`ExpSO3`) |
 | $a_c = \tilde a - b_a,\ \ \omega_c = \tilde\omega - b_g$ | — | bias-corrected ("clean") readings, IMU axes |
 | $X_{\delta x} = \mathrm{blockdiag}(I_6, Q_{\delta\theta}, I_6)$ | $\mathrm{blockdiag}(I_6, Q_{\delta\theta}, I_9)$ | Solà's $I_9$ includes $\delta g$; there is no $\delta g$ here |
 | $z$ | $y$ | the measurement, the raw sensor reading |
@@ -121,37 +121,37 @@ $$
 **Exponential map, quaternion form** (Solà eq. 101), Hamilton $(w, x, y, z)$:
 
 $$
-\operatorname{Exp}(\theta) = \left[\cos\tfrac{\lVert\theta\rVert}{2},\ \frac{\theta}{\lVert\theta\rVert}\sin\tfrac{\lVert\theta\rVert}{2}\right]
+\mathrm{Exp}(\theta) = \left[\cos\tfrac{\lVert\theta\rVert}{2},\ \frac{\theta}{\lVert\theta\rVert}\sin\tfrac{\lVert\theta\rVert}{2}\right]
 $$
 
 Tiny-angle case: if $\lVert\theta\rVert < 10^{-8}$ use $[1,\ \theta/2]$ and normalize, so there is no division by
 zero when still. In Eigen: `Quaterniond(AngleAxisd(|θ|, θ/|θ|))`.
 
 **Exponential map, matrix form (Rodrigues).** `ExpSO3`$(\theta)$ is the $3 \times 3$ rotation matrix of the
-quaternion `ExpQ`$(\theta)$. Both are written $\operatorname{Exp}(\cdot)$ below; which one is meant follows from
+quaternion `ExpQ`$(\theta)$. Both are written $\mathrm{Exp}(\cdot)$ below; which one is meant follows from
 where it is used (quaternion product or matrix product).
 
 **Small-angle approximation**, first order in $\delta\theta$:
 
 $$
-\operatorname{Exp}(\delta\theta) \approx I + [\delta\theta]_\times \quad\text{(matrix)}, \qquad
-\operatorname{Exp}(\delta\theta) \approx \left[1,\ \tfrac12\,\delta\theta\right] \quad\text{(quaternion)}
+\mathrm{Exp}(\delta\theta) \approx I + [\delta\theta]_\times \quad\text{(matrix)}, \qquad
+\mathrm{Exp}(\delta\theta) \approx \left[1,\ \tfrac12\,\delta\theta\right] \quad\text{(quaternion)}
 $$
 
 **Identities used in the derivations:**
 
 $$
-\operatorname{Exp}(x)^\top = \operatorname{Exp}(-x), \qquad (AB)^\top = B^\top A^\top
+\mathrm{Exp}(x)^\top = \mathrm{Exp}(-x), \qquad (AB)^\top = B^\top A^\top
 $$
 
 $$
-\operatorname{Exp}(-x)\,\operatorname{Exp}(\delta\theta)\,\operatorname{Exp}(x) = \operatorname{Exp}\!\left(\operatorname{Exp}(-x)\,\delta\theta\right)
+\mathrm{Exp}(-x)\,\mathrm{Exp}(\delta\theta)\,\mathrm{Exp}(x) = \mathrm{Exp}\!\left(\mathrm{Exp}(-x)\,\delta\theta\right)
 $$
 
 *The same small rotation, expressed in axes that have been rotated by $x$.*
 
 $$
-\operatorname{Exp}(a + b) \approx \operatorname{Exp}(a)\,\operatorname{Exp}(b) \qquad \text{for small } a,\ b
+\mathrm{Exp}(a + b) \approx \mathrm{Exp}(a)\,\mathrm{Exp}(b) \qquad \text{for small } a,\ b
 $$
 
 *Two small rotations compose, to first order, into one rotation of their sum.*
@@ -245,7 +245,7 @@ v_k = v_{k-1} + a_k\,\Delta t
 $$
 
 $$
-q_k = \big(q_{k-1} \otimes \operatorname{Exp}(\omega_c\,\Delta t)\big)\ \text{normalized}
+q_k = \big(q_{k-1} \otimes \mathrm{Exp}(\omega_c\,\Delta t)\big)\ \text{normalized}
 $$
 
 *Remove the gyro bias, scale by $\Delta t$ to a small rotation, multiply on the right: the gyro measures about the
@@ -284,7 +284,7 @@ a_{t,k} &= R_{t,k-1}\left(\tilde a_k - b_{a,t,k-1} - a_{n,k}\right) + g \\
 p_{t,k} &= p_{t,k-1} + v_{t,k-1}\,\Delta t + \tfrac12\,a_{t,k}\,\Delta t^2 \\
 v_{t,k} &= v_{t,k-1} + a_{t,k}\,\Delta t \\
 \omega_{t,k} &= \tilde\omega_k - b_{g,t,k-1} - \omega_{n,k} \qquad \text{(IMU axes, no } R\text{)} \\
-R_{t,k} &= R_{t,k-1}\,\operatorname{Exp}(\omega_{t,k}\,\Delta t) \\
+R_{t,k} &= R_{t,k-1}\,\mathrm{Exp}(\omega_{t,k}\,\Delta t) \\
 b_{a,t,k} &= b_{a,t,k-1} + a_{w,k} \\
 b_{g,t,k} &= b_{g,t,k-1} + \omega_{w,k}
 \end{aligned}
@@ -298,7 +298,7 @@ a_k &= R_{k-1}\left(\tilde a_k - b_{a,k-1}\right) + g \\
 p_k &= p_{k-1} + v_{k-1}\,\Delta t + \tfrac12\,a_k\,\Delta t^2 \\
 v_k &= v_{k-1} + a_k\,\Delta t \\
 \omega_k &= \tilde\omega_k - b_{g,k-1} \\
-R_k &= R_{k-1}\,\operatorname{Exp}(\omega_k\,\Delta t) \\
+R_k &= R_{k-1}\,\mathrm{Exp}(\omega_k\,\Delta t) \\
 b_{a,k} &= b_{a,k-1} \\
 b_{g,k} &= b_{g,k-1}
 \end{aligned}
@@ -309,7 +309,7 @@ $$
 $$
 p_t = p + \delta p, \qquad
 v_t = v + \delta v, \qquad
-R_t = R\,\operatorname{Exp}(\delta\theta), \qquad
+R_t = R\,\mathrm{Exp}(\delta\theta), \qquad
 b_{a,t} = b_a + \delta b_a, \qquad
 b_{g,t} = b_g + \delta b_g
 $$
@@ -347,14 +347,14 @@ $$
 *Move 1: $g$ cancels.*
 
 $$
-a_{t,k} - a_k = R\,\operatorname{Exp}(\delta\theta)\left(\tilde a_k - b_{a,k-1} - \delta b_a - a_n\right) - R\left(\tilde a_k - b_{a,k-1}\right)
+a_{t,k} - a_k = R\,\mathrm{Exp}(\delta\theta)\left(\tilde a_k - b_{a,k-1} - \delta b_a - a_n\right) - R\left(\tilde a_k - b_{a,k-1}\right)
 $$
 
-*Move 2: substitute the true-state composition (§6.4): $R_{t,k-1} = R\,\operatorname{Exp}(\delta\theta)$ and
+*Move 2: substitute the true-state composition (§6.4): $R_{t,k-1} = R\,\mathrm{Exp}(\delta\theta)$ and
 $b_{a,t,k-1} = b_{a,k-1} + \delta b_a$.*
 
 $$
-a_{t,k} - a_k = R\,\operatorname{Exp}(\delta\theta)\left(a_c - \delta b_a - a_n\right) - R\,a_c
+a_{t,k} - a_k = R\,\mathrm{Exp}(\delta\theta)\left(a_c - \delta b_a - a_n\right) - R\,a_c
 $$
 
 *Move 3: write the clean reading $a_c = \tilde a_k - b_{a,k-1}$.*
@@ -363,7 +363,7 @@ $$
 a_{t,k} - a_k = R\left(I + [\delta\theta]_\times\right)\left(a_c - \delta b_a - a_n\right) - R\,a_c
 $$
 
-*Move 4: small-angle approximation $\operatorname{Exp}(\delta\theta) \approx I + [\delta\theta]_\times$.*
+*Move 4: small-angle approximation $\mathrm{Exp}(\delta\theta) \approx I + [\delta\theta]_\times$.*
 
 $$
 a_{t,k} - a_k = R\,[\delta\theta]_\times\, a_c - R\,\delta b_a - R\,a_n
@@ -386,7 +386,7 @@ $$
 $$
 
 Meaning of the $\delta\theta$ term: the code rotates the reading with $R$, but the true rotation is
-$R\,\operatorname{Exp}(\delta\theta)$, so the same reading really points slightly elsewhere. The missed acceleration
+$R\,\mathrm{Exp}(\delta\theta)$, so the same reading really points slightly elsewhere. The missed acceleration
 has size $\lVert a_c\rVert\,\lVert\delta\theta\rVert$, and $\delta v$ grows by that times $\Delta t$ every step.
 The filter never knows $a_{t,k}$; only the difference $a_{t,k} - a_k$ is needed, and it is written entirely in the
 errors.
@@ -398,45 +398,45 @@ Short name: $\omega_c = \tilde\omega_k - b_{g,k-1}$.
 Start from the two rotation lines:
 
 $$
-R_{t,k} = R_{t,k-1}\,\operatorname{Exp}(\omega_{t,k}\,\Delta t), \qquad
-R_k = R_{k-1}\,\operatorname{Exp}(\omega_c\,\Delta t)
+R_{t,k} = R_{t,k-1}\,\mathrm{Exp}(\omega_{t,k}\,\Delta t), \qquad
+R_k = R_{k-1}\,\mathrm{Exp}(\omega_c\,\Delta t)
 $$
 
 $$
-\operatorname{Exp}(\delta\theta_k) = R_k^\top R_{t,k}
+\mathrm{Exp}(\delta\theta_k) = R_k^\top R_{t,k}
 $$
 
-*Move 1: the rotation error is "undo the nominal, then go to the true", from $R_t = R\,\operatorname{Exp}(\delta\theta)$.*
+*Move 1: the rotation error is "undo the nominal, then go to the true", from $R_t = R\,\mathrm{Exp}(\delta\theta)$.*
 
 $$
-\operatorname{Exp}(\delta\theta_k) = \operatorname{Exp}(-\omega_c\,\Delta t)\; R_{k-1}^\top R_{t,k-1}\; \operatorname{Exp}(\omega_{t,k}\,\Delta t)
+\mathrm{Exp}(\delta\theta_k) = \mathrm{Exp}(-\omega_c\,\Delta t)\; R_{k-1}^\top R_{t,k-1}\; \mathrm{Exp}(\omega_{t,k}\,\Delta t)
 $$
 
 *Move 2: substitute both rotation lines, using $(AB)^\top = B^\top A^\top$ and
-$\operatorname{Exp}(x)^\top = \operatorname{Exp}(-x)$.*
+$\mathrm{Exp}(x)^\top = \mathrm{Exp}(-x)$.*
 
 $$
-\operatorname{Exp}(\delta\theta_k) = \operatorname{Exp}(-\omega_c\,\Delta t)\; \operatorname{Exp}(\delta\theta_{k-1})\; \operatorname{Exp}(\omega_{t,k}\,\Delta t)
+\mathrm{Exp}(\delta\theta_k) = \mathrm{Exp}(-\omega_c\,\Delta t)\; \mathrm{Exp}(\delta\theta_{k-1})\; \mathrm{Exp}(\omega_{t,k}\,\Delta t)
 $$
 
-*Move 3: the middle factor is the old error, $R_{k-1}^\top R_{t,k-1} = \operatorname{Exp}(\delta\theta_{k-1})$.*
+*Move 3: the middle factor is the old error, $R_{k-1}^\top R_{t,k-1} = \mathrm{Exp}(\delta\theta_{k-1})$.*
 
 $$
-\operatorname{Exp}(\delta\theta_k) \approx \operatorname{Exp}(-\omega_c\,\Delta t)\; \operatorname{Exp}(\delta\theta_{k-1})\; \operatorname{Exp}(\omega_c\,\Delta t)\; \operatorname{Exp}(\delta\omega\,\Delta t)
+\mathrm{Exp}(\delta\theta_k) \approx \mathrm{Exp}(-\omega_c\,\Delta t)\; \mathrm{Exp}(\delta\theta_{k-1})\; \mathrm{Exp}(\omega_c\,\Delta t)\; \mathrm{Exp}(\delta\omega\,\Delta t)
 $$
 
 *Move 4: split the true turn rate,
 $\omega_{t,k} = \tilde\omega_k - (b_{g,k-1} + \delta b_g) - \omega_n = \omega_c + \delta\omega$ with
 $\delta\omega = -\delta b_g - \omega_n$; $\omega_c\,\Delta t$ is small, so
-$\operatorname{Exp}((\omega_c + \delta\omega)\Delta t) \approx \operatorname{Exp}(\omega_c\Delta t)\,\operatorname{Exp}(\delta\omega\,\Delta t)$.*
+$\mathrm{Exp}((\omega_c + \delta\omega)\Delta t) \approx \mathrm{Exp}(\omega_c\Delta t)\,\mathrm{Exp}(\delta\omega\,\Delta t)$.*
 
 $$
-\operatorname{Exp}(\delta\theta_k) \approx \operatorname{Exp}\!\left(A\,\delta\theta_{k-1}\right)\,\operatorname{Exp}(\delta\omega\,\Delta t),
-\qquad A = \operatorname{Exp}(-\omega_c\,\Delta t) \ \ (3 \times 3)
+\mathrm{Exp}(\delta\theta_k) \approx \mathrm{Exp}\!\left(A\,\delta\theta_{k-1}\right)\,\mathrm{Exp}(\delta\omega\,\Delta t),
+\qquad A = \mathrm{Exp}(-\omega_c\,\Delta t) \ \ (3 \times 3)
 $$
 
 *Move 5: sandwich identity
-$\operatorname{Exp}(-x)\,\operatorname{Exp}(\delta\theta)\,\operatorname{Exp}(x) = \operatorname{Exp}(\operatorname{Exp}(-x)\,\delta\theta)$:
+$\mathrm{Exp}(-x)\,\mathrm{Exp}(\delta\theta)\,\mathrm{Exp}(x) = \mathrm{Exp}(\mathrm{Exp}(-x)\,\delta\theta)$:
 the same small rotation, written in axes that turned by $x$.*
 
 $$
@@ -448,18 +448,18 @@ $$
 Result, with $\delta\omega$ expanded:
 
 $$
-\delta\theta_k = \operatorname{Exp}\!\left(-(\tilde\omega_k - b_{g,k-1})\,\Delta t\right)\delta\theta_{k-1} - \Delta t\ \delta b_{g,k-1} - \omega_{n,k}\,\Delta t
+\delta\theta_k = \mathrm{Exp}\!\left(-(\tilde\omega_k - b_{g,k-1})\,\Delta t\right)\delta\theta_{k-1} - \Delta t\ \delta b_{g,k-1} - \omega_{n,k}\,\Delta t
 $$
 
 | term | meaning |
 |---|---|
-| $\operatorname{Exp}(-\omega_c\Delta t)\,\delta\theta_{k-1}$ | the old orientation error re-expressed in the IMU axes after this step's turn; driving straight it is $\approx I$ and the error just stays |
+| $\mathrm{Exp}(-\omega_c\Delta t)\,\delta\theta_{k-1}$ | the old orientation error re-expressed in the IMU axes after this step's turn; driving straight it is $\approx I$ and the error just stays |
 | $-\Delta t\,\delta b_{g,k-1}$ | a gyro bias error adds a wrong turn every step, so the orientation error grows |
 | $-\omega_{n,k}\,\Delta t$ | gyro noise; goes to $Q$ |
 
 Why $\omega_t$ carries no $R$ while $a_t$ does: the acceleration is combined with $v$, $p$ and $g$, which live in
 the world frame, so it is rotated there. The turn is applied on the right of $R$, in IMU axes, so it stays in IMU
-axes. The equivalent world-frame form puts the turn on the left, $\operatorname{Exp}(R\,\omega\,\Delta t)\,R$;
+axes. The equivalent world-frame form puts the turn on the left, $\mathrm{Exp}(R\,\omega\,\Delta t)\,R$;
 never $R$ inside and on the right at the same time, which would rotate twice.
 
 ### 6.8 Bias errors $\delta b_a$, $\delta b_g$
@@ -477,16 +477,16 @@ $$
 \begin{aligned}
 \delta p_k &= \delta p_{k-1} + \delta v_{k-1}\,\Delta t \\
 \delta v_k &= \delta v_{k-1} - R_{k-1}\,[\tilde a_k - b_{a,k-1}]_\times\,\Delta t\ \delta\theta_{k-1} - R_{k-1}\,\Delta t\ \delta b_{a,k-1} - R_{k-1}\,a_{n,k}\,\Delta t \\
-\delta\theta_k &= \operatorname{Exp}\!\left(-(\tilde\omega_k - b_{g,k-1})\,\Delta t\right)\delta\theta_{k-1} - \Delta t\ \delta b_{g,k-1} - \omega_{n,k}\,\Delta t \\
+\delta\theta_k &= \mathrm{Exp}\!\left(-(\tilde\omega_k - b_{g,k-1})\,\Delta t\right)\delta\theta_{k-1} - \Delta t\ \delta b_{g,k-1} - \omega_{n,k}\,\Delta t \\
 \delta b_{a,k} &= \delta b_{a,k-1} + a_{w,k} \\
 \delta b_{g,k} &= \delta b_{g,k-1} + \omega_{w,k}
 \end{aligned}
 $$
 
-Tools used: $\operatorname{Exp}(\delta\theta) \approx I + [\delta\theta]_\times$ · drop small × small and
+Tools used: $\mathrm{Exp}(\delta\theta) \approx I + [\delta\theta]_\times$ · drop small × small and
 error × $\Delta t^2$ · $[a]_\times b = -[b]_\times a$ ·
-$\operatorname{Exp}(-x)\operatorname{Exp}(\delta\theta)\operatorname{Exp}(x) = \operatorname{Exp}(\operatorname{Exp}(-x)\,\delta\theta)$.
-The $\operatorname{Exp}(-\cdots)$ in the $\delta\theta$ line is a $3 \times 3$ rotation matrix.
+$\mathrm{Exp}(-x)\mathrm{Exp}(\delta\theta)\mathrm{Exp}(x) = \mathrm{Exp}(\mathrm{Exp}(-x)\,\delta\theta)$.
+The $\mathrm{Exp}(-\cdots)$ in the $\delta\theta$ line is a $3 \times 3$ rotation matrix.
 
 ---
 
@@ -506,8 +506,8 @@ $$
   the step. Never computed, they are unknown random values.
 - $F_i$ (15×12) places each noise in its row: identities and zeros, the $\delta p$ row is zero.
 
-The linearization is already done inside the moves ($\operatorname{Exp}(\delta\theta) \approx I + [\delta\theta]_\times$,
-$\operatorname{Exp}(a+b) \approx \operatorname{Exp}(a)\operatorname{Exp}(b)$, small × small dropped). What remains
+The linearization is already done inside the moves ($\mathrm{Exp}(\delta\theta) \approx I + [\delta\theta]_\times$,
+$\mathrm{Exp}(a+b) \approx \mathrm{Exp}(a)\mathrm{Exp}(b)$, small × small dropped). What remains
 is linear in the errors, so $F = \partial\delta x_k / \partial\delta x_{k-1}$ at $\delta x = 0$ is read off as the
 coefficients.
 
@@ -521,7 +521,7 @@ F =
 \begin{bmatrix}
 I & I\,\Delta t & 0 & 0 & 0 \\
 0 & I & -R\,[a_c]_\times\,\Delta t & -R\,\Delta t & 0 \\
-0 & 0 & \operatorname{Exp}(-\omega_c\,\Delta t) & 0 & -I\,\Delta t \\
+0 & 0 & \mathrm{Exp}(-\omega_c\,\Delta t) & 0 & -I\,\Delta t \\
 0 & 0 & 0 & I & 0 \\
 0 & 0 & 0 & 0 & I
 \end{bmatrix}
@@ -539,15 +539,15 @@ F[kTh, kBg] = −I·Δt
 ```
 
 Which $R$: $R_{k-1}$ is the nominal rotation at the start of the step and goes into $F$.
-$R_k = R_{k-1}\operatorname{Exp}(\omega_c\Delta t)$ is the nominal after the step (gyro turn, no $\delta\theta$).
-$R_t = R\,\operatorname{Exp}(\delta\theta)$ is the true one, unknown.
+$R_k = R_{k-1}\mathrm{Exp}(\omega_c\Delta t)$ is the nominal after the step (gyro turn, no $\delta\theta$).
+$R_t = R\,\mathrm{Exp}(\delta\theta)$ is the true one, unknown.
 
 | $F$ block | meaning |
 |---|---|
 | $I\,\Delta t$ | velocity error → position error |
 | $-R[a_c]_\times\Delta t$ | orientation error → gravity leaks into velocity |
 | $-R\,\Delta t$ | accelerometer bias error → velocity error |
-| $\operatorname{Exp}(-\omega_c\Delta t)$ | old orientation error, seen from the frame that just turned |
+| $\mathrm{Exp}(-\omega_c\Delta t)$ | old orientation error, seen from the frame that just turned |
 | $-I\,\Delta t$ | gyro bias error → orientation error |
 
 **Row 1, $\delta p$**
@@ -589,12 +589,12 @@ gains $x$ and $y$ components.
 | column | block | reason |
 |---|---|---|
 | $\delta p$, $\delta v$ | 0 | position and velocity do not change the orientation error |
-| $\delta\theta$ | $\operatorname{Exp}(-\omega_c\Delta t)$ | the old orientation error carried over, re-described in the IMU's new axes; same size, a rotation keeps length |
+| $\delta\theta$ | $\mathrm{Exp}(-\omega_c\Delta t)$ | the old orientation error carried over, re-described in the IMU's new axes; same size, a rotation keeps length |
 | $\delta b_a$ | 0 | accelerometer bias does not affect orientation |
 | $\delta b_g$ | $-I\,\Delta t$ | a gyro bias error is a wrong turn every step, so the orientation error grows |
 
-$\operatorname{Exp}(-\omega_c\Delta t)$ is a rotation matrix (diagonal near 1), not a skew matrix, though it is built
-from one: $\operatorname{Exp}(\theta) \approx I + [\theta]_\times$. Driving straight it is $\approx I$ and the error
+$\mathrm{Exp}(-\omega_c\Delta t)$ is a rotation matrix (diagonal near 1), not a skew matrix, though it is built
+from one: $\mathrm{Exp}(\theta) \approx I + [\theta]_\times$. Driving straight it is $\approx I$ and the error
 just stays; turning, the IMU axes turn, so the same physical error gets new components. The rate form (eq. 238)
 shows $-[\omega]_\times\delta\theta$; the step form (eq. 261) the full rotation. The code uses the full rotation.
 In prediction $\delta\theta$ grows only through the gyro bias error and the gyro noise; the diagonal block only
@@ -747,7 +747,7 @@ $$
 skew matrix.*
 
 $$
-\delta q = \operatorname{Exp}(\delta\theta) \approx \left[1,\ \tfrac12\,\delta\theta\right]
+\delta q = \mathrm{Exp}(\delta\theta) \approx \left[1,\ \tfrac12\,\delta\theta\right]
 \quad\Rightarrow\quad
 \frac{\partial\,\delta q}{\partial\,\delta\theta} = \tfrac12 \begin{bmatrix} 0_{1\times3} \\ I_3 \end{bmatrix}
 $$
@@ -806,7 +806,7 @@ $3 \times 3$ block $-R[\ell]_\times$.*
 Shortcut, differentiating with respect to $\delta\theta$ directly:
 
 $$
-R_t\,\ell = R\,\operatorname{Exp}(\delta\theta)\,\ell \approx R\,\ell + R\,[\delta\theta]_\times\,\ell = R\,\ell - R\,[\ell]_\times\,\delta\theta
+R_t\,\ell = R\,\mathrm{Exp}(\delta\theta)\,\ell \approx R\,\ell + R\,[\delta\theta]_\times\,\ell = R\,\ell - R\,[\ell]_\times\,\delta\theta
 \quad\Rightarrow\quad
 \frac{\partial h}{\partial\,\delta\theta} = -R\,[\ell]_\times
 $$
@@ -883,7 +883,7 @@ positive definite in floating point.*
 $$
 p \leftarrow p + \hat{\delta p}, \qquad
 v \leftarrow v + \hat{\delta v}, \qquad
-q \leftarrow \big(q \otimes \operatorname{Exp}(\hat{\delta\theta})\big)\ \text{normalized}, \qquad
+q \leftarrow \big(q \otimes \mathrm{Exp}(\hat{\delta\theta})\big)\ \text{normalized}, \qquad
 b_a \leftarrow b_a + \hat{\delta b}_a, \qquad
 b_g \leftarrow b_g + \hat{\delta b}_g
 $$
