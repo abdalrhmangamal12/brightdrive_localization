@@ -1,5 +1,5 @@
 """Unit tests of the bridge's conversions: time stamps, the sweep rule, the sweep assembler's gap check, the IMU
-bias and the GNSS covariance. No server needed; carla and rclpy must import, so run inside the sim container:
+bias, the GNSS covariance, the `enabled` switch and the camera's JPEG. No server needed; carla and rclpy must import, so run inside the sim container:
 
   docker compose run --rm --no-deps sim python3 -m pytest -q -p no:cacheprovider /ws/src/brightdrive_localization/sim/carla_bridge
 """
@@ -87,3 +87,24 @@ def test_gnss_covariance_diagonal_known():
     msg = cb.gnss_msg(m, 'gnss', 0.3)
     assert msg.position_covariance_type == 2   # COVARIANCE_TYPE_DIAGONAL_KNOWN
     assert list(msg.position_covariance) == pytest.approx([0.09, 0, 0, 0, 0.09, 0, 0, 0, 0.09])
+
+
+def test_active_sensors_skips_disabled():
+    cfg = {'sensors': {'lidar': {}, 'imu': {'enabled': True}, 'camera': {'enabled': False}}}
+    assert list(cb.active_sensors(cfg)) == ['lidar', 'imu']
+
+
+def test_image_msg_is_jpeg():
+    # An 8x4 BGRA frame: blue on the left half, red on the right half.
+    frame = np.zeros((4, 8, 4), np.uint8)
+    frame[:, :4] = (255, 0, 0, 255)
+    frame[:, 4:] = (0, 0, 255, 255)
+    m = SimpleNamespace(timestamp=2.5, width=8, height=4, raw_data=frame.tobytes())
+    msg = cb.image_msg(m, 'camera', 90)
+    assert msg.format == 'jpeg' and msg.header.frame_id == 'camera'
+    assert (msg.header.stamp.sec, msg.header.stamp.nanosec) == (2, 500_000_000)
+    data = bytes(msg.data)
+    assert data[:2] == b'\xff\xd8' and data[-2:] == b'\xff\xd9'   # JPEG start and end markers
+    decoded = cb.cv2.imdecode(np.frombuffer(data, np.uint8), cb.cv2.IMREAD_COLOR)
+    assert decoded.shape == (4, 8, 3)
+    assert decoded[2, 1].argmax() == 0 and decoded[2, 6].argmax() == 2   # BGR: blue left, red right

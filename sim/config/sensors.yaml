@@ -150,3 +150,33 @@ sensors:
       noise_alt_bias: 0.0
       # GNSS noise reproducible run to run; different from the IMU seed.
       noise_seed: 2
+
+  # --- Demo camera: pictures for the video, nothing else ---------------------------------------------------------
+  # Not a localization input: nothing in loc subscribes to it. Off by default: enable it only for the video run
+  # (every frame is rendered on the server and costs tick time, and the recorder's -a takes the topic into the bag).
+  camera:
+    enabled: false
+    # CARLA's RGB camera: a rendered picture per frame, BGRA bytes.
+    blueprint: sensor.camera.rgb
+    # Frame of the camera body (x forward, like the other sensors), not an optical frame; nothing uses it.
+    frame_id: camera
+    # The ROS 2 topic the bridge publishes (sensor_msgs/CompressedImage, format "jpeg").
+    topic: /camera/image/compressed
+    # A demo stream: the newest frame only, a lost one does not matter.
+    queue_depth: 1
+    reliability: best_effort
+    # Chase view: 6 m behind the car's origin, 2.5 m up, looking 12 degrees down at the car (ROS: positive pitch
+    # = down).
+    xyz: [-6.0, 0.0, 2.5]
+    rpy: [0.0, 12.0, 0.0]
+    # JPEG quality (0-100) of the bridge's encoder; ~30 kB per frame at 80.
+    jpeg_quality: 80
+    # Camera settings, passed to CARLA as they are.
+    attributes:
+      # Picture size in pixels, 16:9.
+      image_size_x: 640
+      image_size_y: 360
+      # Horizontal field of view, degrees.
+      fov: 90.0
+      # Seconds between frames: 0.1 s = 10 Hz = every 10th tick at tick_s 0.01.
+      sensor_tick: 0.1

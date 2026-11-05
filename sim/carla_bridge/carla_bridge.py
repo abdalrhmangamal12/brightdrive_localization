@@ -2,8 +2,9 @@
 """The bridge between CARLA and ROS 2.
 
 It finds our car (the role_name in config/sensors.yaml), attaches the sensors from that file, and publishes every
-measurement as a ROS 2 message: LiDAR, IMU, GNSS, /clock and /tf_static. It never spawns the car and never ticks
-the world: ScenarioRunner does that. It exits on Ctrl-C / SIGTERM (exit 0), and with exit 1 when the server is
+measurement as a ROS 2 message: LiDAR, IMU, GNSS, /clock and /tf_static; a sensor marked `enabled: false` in the
+file (the demo camera, JPEG pictures on /camera/image/compressed) is left out. It never spawns the car and never
+ticks the world: ScenarioRunner does that. It exits on Ctrl-C / SIGTERM (exit 0), and with exit 1 when the server is
 lost: an RPC that fails, or no tick for WATCHDOG_S seconds while a short probe of the server fails too (a server
 that answers but does not tick is only reported, once, and the wait goes on).
 
@@ -23,6 +24,11 @@ from pathlib import Path
 
 # numpy: turns the LiDAR's raw bytes into an array we can edit (flip y).
 import numpy as np
+# OpenCV, for the demo camera's JPEG encoding only: the bridge runs without it while the camera is disabled.
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 # CARLA's Python API: talk to the server.
 import carla
 # ROS 2 for Python (Humble, inside the sim container).
@@ -33,7 +39,7 @@ import yaml
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import TransformStamped
 from rosgraph_msgs.msg import Clock
-from sensor_msgs.msg import Imu, NavSatFix, NavSatStatus, PointCloud2, PointField
+from sensor_msgs.msg import CompressedImage, Imu, NavSatFix, NavSatStatus, PointCloud2, PointField
 # QoS = delivery rules of a topic (best effort or reliable, how many messages to keep).
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.signals import SignalHandlerOptions
@@ -242,10 +248,33 @@ def gnss_msg(m, frame_id, sigma_m):
     return msg
 
 
-def static_transforms(cfg, base_frame='base_link'):
-    """base_link -> each sensor frame, from the YAML (already in ROS axes)."""
+def image_msg(m, frame_id, quality):
+    """carla.Image (BGRA bytes) -> sensor_msgs/CompressedImage, JPEG at `quality` (0-100)."""
+    bgra = np.frombuffer(m.raw_data, dtype=np.uint8).reshape(m.height, m.width, 4)
+    ok, jpeg = cv2.imencode('.jpg', cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR), [cv2.IMWRITE_JPEG_QUALITY, int(quality)])
+    if not ok:
+        raise RuntimeError('JPEG encoding failed')
+    msg = CompressedImage()
+    msg.header.stamp = ros_time(m.timestamp)
+    msg.header.frame_id = frame_id
+    msg.format = 'jpeg'
+    msg.data = jpeg.tobytes()
+    return msg
+
+
+# The ROS message of each sensor in sensors.yaml.
+MSG_TYPES = {'lidar': PointCloud2, 'imu': Imu, 'gnss': NavSatFix, 'camera': CompressedImage}
+
+
+def active_sensors(cfg):
+    """The sensors the bridge attaches: every entry of `sensors` unless it says `enabled: false`."""
+    return {name: s for name, s in cfg['sensors'].items() if s.get('enabled', True)}
+
+
+def static_transforms(sensors, base_frame='base_link'):
+    """base_link -> each sensor frame, from the YAML entries (already in ROS axes)."""
     out = []
-    for s in cfg['sensors'].values():
+    for s in sensors.values():
         t = TransformStamped()
         # Parent = the car, child = the sensor.
         t.header.frame_id = base_frame
@@ -318,6 +347,13 @@ def main():
                          f'{n_slices} slices are not one revolution')
     # The bridge's own accelerometer bias (ROS axes), 0 unless the sensor file says otherwise.
     accel_bias = [float(v) for v in cfg['sensors']['imu'].get('bridge_accel_bias', [0.0, 0.0, 0.0])]
+    # The sensors to attach: every entry unless it says `enabled: false` (the demo camera, off by default).
+    active = active_sensors(cfg)
+    unknown = sorted(set(active) - set(MSG_TYPES))
+    if unknown:
+        raise SystemExit(f'sensors.yaml: no converter for sensor(s) {unknown}')
+    if 'camera' in active and cv2 is None:
+        raise SystemExit('sensors.yaml enables the camera, but OpenCV (cv2) is not installed: it encodes the frames')
     # Start ROS 2 and create this node. Ctrl-C is left to Python (a KeyboardInterrupt, handled at the end): if ROS
     # shut itself down first, CARLA's callbacks would keep publishing into a closed ROS ("context is invalid").
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
@@ -334,16 +370,15 @@ def main():
 
     # One publisher per sensor: topic, queue depth and delivery (best_effort / reliable) from the YAML.
     pubs = {}
-    for name, s in cfg['sensors'].items():
+    for name, s in active.items():
         reliability = ReliabilityPolicy.RELIABLE if s['reliability'] == 'reliable' else ReliabilityPolicy.BEST_EFFORT
         qos = QoSProfile(reliability=reliability, history=HistoryPolicy.KEEP_LAST, depth=s['queue_depth'])
-        msg_type = {'lidar': PointCloud2, 'imu': Imu, 'gnss': NavSatFix}[name]
-        pubs[name] = node.create_publisher(msg_type, s['topic'], qos)
+        pubs[name] = node.create_publisher(MSG_TYPES[name], s['topic'], qos)
     # /clock: simulation time for every node that runs with use_sim_time.
     clock_pub = node.create_publisher(Clock, '/clock', 10)
     # Sensor positions on the car, published once (latched).
     tf_static = StaticTransformBroadcaster(node)
-    tf_static.sendTransform(static_transforms(cfg))
+    tf_static.sendTransform(static_transforms(active))
 
     # IMU noise variances (stddev^2), copied into every Imu message.
     imu_attrs = cfg['sensors']['imu']['attributes']
@@ -360,7 +395,7 @@ def main():
         while rclpy.ok():
             log.info(f'waiting for a vehicle with role_name={cfg["hero"]["role_name"]} ...')
             world, hero = find_hero(client, cfg['hero']['role_name'])
-            log.info(f'found {hero.type_id} (id {hero.id}); attaching {", ".join(cfg["sensors"])}')
+            log.info(f'found {hero.type_id} (id {hero.id}); attaching {", ".join(active)}')
 
             # /clock: CARLA calls this function once per tick with the new simulation time. It also notes the
             # wall time of the tick for the watchdog below.
@@ -373,7 +408,7 @@ def main():
 
             # Spawn each sensor on the car and connect it to its converter + publisher.
             lib = world.get_blueprint_library()
-            for name, s in cfg['sensors'].items():
+            for name, s in active.items():
                 bp = lib.find(s['blueprint'])
                 for key, value in s['attributes'].items():
                     bp.set_attribute(key, str(value))
@@ -389,8 +424,14 @@ def main():
                     sensor.listen(assembler.add)
                 elif name == 'imu':
                     sensor.listen(lambda m, f=frame, p=pub: p.publish(imu_msg(m, f, gyro_var, accel_var, accel_bias)))
-                else:
+                elif name == 'gnss':
                     sensor.listen(lambda m, f=frame, p=pub: p.publish(gnss_msg(m, f, gnss_sigma_m)))
+                else:
+                    # The demo camera: one JPEG per frame.
+                    quality = int(s.get('jpeg_quality', 80))
+                    log.info(f'camera: {s["attributes"]["image_size_x"]}x{s["attributes"]["image_size_y"]} every '
+                             f'{s["attributes"]["sensor_tick"]} s, JPEG quality {quality}, on {s["topic"]} (demo only)')
+                    sensor.listen(lambda m, f=frame, p=pub, q=quality: p.publish(image_msg(m, f, q)))
                 sensors.append(sensor)
 
             # Nothing else to do while the car exists: the callbacks publish. Check twice a second if it is gone
