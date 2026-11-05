@@ -106,14 +106,16 @@ scenarios:
   # High speed with sudden steering: 15 m/s (54 km/h) on the long straights (0-75 m, 1230-1365 m, 1462-1630 m,
   # 1940 m-end), 8 m/s (= nominal) elsewhere: the 90-degree turns start at 115, 1408, 1673 m and the slow trigger
   # sits 40 m before each (the braking distance from 15 m/s); at 9 m/s the car touched the road mesh at the
-  # overpass corner (912 m), at 8 m/s it does not. Two lane changes over 20 m at 15 m/s on the
-  # two-lane straight of road 3 (1453-1555 m): left at 1470 m, left again at 1520 m, rejoining the route after
-  # each. Distances are route metres Peaks: eval/plots/high_speed_profile.png.
+  # overpass corner (912 m), at 8 m/s it does not. Two lane changes over 25 m at 15 m/s on the two-lane straight
+  # of road 3 (1453-1555 m): left at 1470 m, left again at 1520 m, rejoining the route after each. One lane
+  # (3.5 m) in 25 m at 15 m/s: peak lateral acceleration ~8 m/s^2, below a real car's grip limit (an estimate: the
+  # measured peak, from ground truth, is reported with every run of this scenario). Distances are route metres.
+  # Peaks: eval/plots/high_speed_profile.png.
   high_speed_turns:
     speed: 15.0
     turn_speed: 8.0
     speed_profile: [[0, fast], [75, slow], [1230, fast], [1365, slow], [1462, fast], [1630, slow], [1940, fast]]
-    lane_changes: [[1470, left, 20], [1520, left, 20]]
+    lane_changes: [[1470, left, 25], [1520, left, 25]]
   # Reverse-direction map reuse: only the reserved section, driven the other way (open route, 3 route points).
   reverse_reuse: {route: reverse_section}
 
