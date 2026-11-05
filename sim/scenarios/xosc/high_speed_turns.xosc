@@ -581,7 +581,7 @@
             <Event name="LaneChange00_left_at_1470m" priority="parallel">
               <Action name="LaneChange00_left_at_1470m">
                 <PrivateAction><LateralAction><LaneChangeAction>
-                  <LaneChangeActionDynamics dynamicsShape="sinusoidal" value="25.0" dynamicsDimension="distance"/>
+                  <LaneChangeActionDynamics dynamicsShape="sinusoidal" value="30.0" dynamicsDimension="distance"/>
                   <LaneChangeTarget><RelativeTargetLane entityRef="hero" value="1"/></LaneChangeTarget>
                 </LaneChangeAction></LateralAction></PrivateAction>
               </Action>
@@ -604,26 +604,26 @@
             </Event>
           </Maneuver>
           <Maneuver name="LaneChange01">
-            <Event name="LaneChange01_left_at_1520m" priority="parallel">
-              <Action name="LaneChange01_left_at_1520m">
+            <Event name="LaneChange01_right_at_1515m" priority="parallel">
+              <Action name="LaneChange01_right_at_1515m">
                 <PrivateAction><LateralAction><LaneChangeAction>
-                  <LaneChangeActionDynamics dynamicsShape="sinusoidal" value="25.0" dynamicsDimension="distance"/>
-                  <LaneChangeTarget><RelativeTargetLane entityRef="hero" value="1"/></LaneChangeTarget>
+                  <LaneChangeActionDynamics dynamicsShape="sinusoidal" value="30.0" dynamicsDimension="distance"/>
+                  <LaneChangeTarget><RelativeTargetLane entityRef="hero" value="-1"/></LaneChangeTarget>
                 </LaneChangeAction></LateralAction></PrivateAction>
               </Action>
               <StartTrigger><ConditionGroup>
-              <Condition name="At1520m" delay="0" conditionEdge="rising">
+              <Condition name="At1515m" delay="0" conditionEdge="rising">
                 <ByEntityCondition>
                   <TriggeringEntities triggeringEntitiesRule="any"><EntityRef entityRef="hero"/></TriggeringEntities>
                   <EntityCondition><ReachPositionCondition tolerance="6.0">
-                    <Position><WorldPosition x="-88.49" y="46.91" z="-0.53" h="-1.5680"/></Position>
+                    <Position><WorldPosition x="-88.51" y="52.91" z="-0.62" h="-1.5680"/></Position>
                   </ReachPositionCondition></EntityCondition>
                 </ByEntityCondition>
               </Condition>
-              <Condition name="At1520m_driven" delay="0" conditionEdge="rising">
+              <Condition name="At1515m_driven" delay="0" conditionEdge="rising">
                 <ByEntityCondition>
                   <TriggeringEntities triggeringEntitiesRule="any"><EntityRef entityRef="hero"/></TriggeringEntities>
-                  <EntityCondition><TraveledDistanceCondition value="1440.0"/></EntityCondition>
+                  <EntityCondition><TraveledDistanceCondition value="1435.0"/></EntityCondition>
                 </ByEntityCondition>
               </Condition>
             </ConditionGroup></StartTrigger>
