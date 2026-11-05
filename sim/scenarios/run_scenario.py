@@ -92,7 +92,9 @@ def main():
     spec.loader.exec_module(sr)
     sr.ScenarioRunner.frame_rate = 1.0 / tick
     # ScenarioRunner's command line, as if typed: synchronous mode, results on screen.
-    sys.argv = [SCENARIO_RUNNER, '--openscenario', str(xosc), '--sync', '--output', '--timeout', '60']
+    sys.argv = [SCENARIO_RUNNER, '--openscenario', str(xosc), '--sync', '--output', '--timeout', '60',
+                # The Traffic Manager's random seed (ScenarioRunner's default is 0 as well): the scenario's `seed`.
+                '--trafficManagerSeed', str(int(settings.load(a.scenario)['seed']))]
     if a.param:
         sys.argv += ['--openscenarioparams', ','.join(a.param)]
     print(f'running {xosc.name} at {"max" if a.speed <= 0 else a.speed}x real time, tick {tick} s '

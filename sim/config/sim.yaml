@@ -8,7 +8,10 @@ town: Town03
 # The world tick in synchronous mode, seconds. Every sensor hangs on it: the IMU measures once per tick (100 Hz
 # at 0.01 s), the LiDAR returns the slice of its revolution that the tick covers (72° at 0.01 s with
 # rotation_frequency 20; the bridge assembles 5 slices into one 20 Hz sweep, sensors.yaml assemble_sweeps).
-# ScenarioRunner, the tick pacing and the bridge read it from here; for one run: run.sh nominal --tick 0.05.
+# ScenarioRunner, the tick pacing, the bridge and the ground truth read it from here. `run.sh <name> --tick 0.05`
+# changes ScenarioRunner's tick only: the bridge keeps reading tick_s here for its sweep rule (rotation_frequency
+# x tick_s x assemble_sweeps = 1) and its tick-grid check, so a 0.05 s run needs tick_s: 0.05 here and
+# assemble_sweeps: 1 in sensors.yaml.
 # Decision of 2026-11-02 (docs/decisions.md section 2, after the first ESKF run): 0.01 s for a 100 Hz IMU.
 # Real-time: no recording holds 1x; record with --speed 0.5.
 tick_s: 0.01
@@ -42,7 +45,8 @@ defaults:
   reverse: false
   # How many times around the loop (closed routes only).
   laps: 1
-  # Where on the route the car starts: index of a route waypoint (one every 5 m; 0 = the route's first point).
+  # Where on the route the car starts: the INDEX of a route waypoint (not metres; waypoints are ~6 m apart,
+  # 0 = the route's first point).
   start_at: 0
   # Seconds the car stands still at the start before it drives: the estimator's still window for IMU
   # initialization and the gravity check (and the time the initial pose, if any, is published). .xosc
@@ -68,7 +72,8 @@ defaults:
   weather: clear
   # GNSS random error (1 sigma), metres. The bridge converts it to CARLA's noise in degrees.
   gnss_noise_m: 0.3
-  # GNSS constant offset, metres (the same on latitude and longitude).
+  # GNSS constant offset, metres, applied to latitude AND longitude alike: the fix is shifted diagonally by
+  # gnss_bias_m x sqrt(2) in total.
   gnss_bias_m: 0.0
   # GNSS outage, made by the gate at the ROS 2 input (sim/gnss_gate/gnss_gate.py): /gnss/fix_gated carries
   # nothing from start to start + duration (seconds after the first fix). Duration 0 = no outage.
@@ -82,7 +87,8 @@ defaults:
   init_offset_dir_deg: 45.0
   # Heading (yaw) offset of the initial pose, degrees.
   init_heading_offset_deg: 30.0
-  # Seed for `random` choices (initial pose direction).
+  # Seed for `random` choices (the initial pose direction) and for CARLA's Traffic Manager (the traffic cars'
+  # decisions; run_scenario.py passes it as ScenarioRunner's --trafficManagerSeed).
   seed: 0
   # Stop after this many simulated seconds (0 = no limit: the run ends when the route is done).
   time_limit_s: 0
@@ -98,7 +104,7 @@ scenarios:
   # Nominal + a 30 s GNSS outage 60 s in, then 60 s of recovery (time limit 150 s).
   gnss_outage: {gnss_outage_start_s: 60.0, gnss_outage_duration_s: 30.0, time_limit_s: 150}
   # Re-localization: starts mid-route (waypoint 170, about 1030 m along the loop, on a straight), stands still
-  # 3 s, /initialpose = true pose + 5 m at 45 degrees + 30 degrees of heading; 120 s.
+  # 5 s (start_delay_s), /initialpose = the start pose + 5 m at 45 degrees + 30 degrees of heading; 120 s.
   relocalization: {start_at: 170, init_offset_m: 5.0, init_offset_dir_deg: 45.0, init_heading_offset_deg: 30.0,
                    time_limit_s: 120}
   # Many cars around ours: occlusions for map matching (eval/traffic_proximity.py counts how many come close).
