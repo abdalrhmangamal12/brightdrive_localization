@@ -1,0 +1,9 @@
+# colcon in the mapping container (COLCON_DEFAULTS_FILE in compose.yaml): build mapping/ only. Without this it
+# would also pick up eskf/ (plain CMake, has its own build/) and anything else with a CMakeLists.txt.
+# build/ install/ log/ go to the repo root (gitignored). Override per call: colcon build --base-paths <dir>
+build:
+  base-paths: [mapping]
+  symlink-install: true
+  cmake-args: [-DCMAKE_BUILD_TYPE=RelWithDebInfo, -DCMAKE_EXPORT_COMPILE_COMMANDS=ON]
+test:
+  base-paths: [mapping]

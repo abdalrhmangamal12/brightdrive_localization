@@ -36,6 +36,9 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       target: sim
+      args:
+        HOST_UID: "${UID}"
+        HOST_GID: "${GID}"
     image: brightdrive/sim:dev
     network_mode: host
     ipc: host
@@ -50,4 +53,30 @@ services:
     depends_on:
       carla-server:
         condition: service_healthy
+    command: sleep infinity
+
+  # Mapping (docker/Dockerfile, stage mapping): FAST-LIO in the image, brightdrive_mapping built from the mounted
+  # repo with colcon. Works from bags, so no dependency on the server. Idle, you exec into it.
+  mapping:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: mapping
+      args:
+        HOST_UID: "${UID}"
+        HOST_GID: "${GID}"
+    image: brightdrive/mapping:dev
+    network_mode: host
+    ipc: host
+    init: true
+    user: "${UID}:${GID}"
+    working_dir: /ws/src/brightdrive_localization
+    environment:
+      <<: *ros-env
+      COLCON_DEFAULTS_FILE: /ws/src/brightdrive_localization/docker/colcon_defaults.yaml
+    volumes:
+      - .:/ws/src/brightdrive_localization
+      - ${BAGS_DIR}:/bags
+      - ${MAPS_DIR}:/maps
+      - /etc/machine-id:/etc/machine-id:ro
     command: sleep infinity

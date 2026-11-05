@@ -5,6 +5,7 @@ CARLA 0.9.15 · Town03 · ROS 2 Humble · C++
 | Component | Status | Folder |
 |---|---|---|
 | Error-state Kalman filter (IMU + GNSS), pure C++ | in progress | [`eskf/`](eskf/README.md) |
+| Mapping: FAST-LIO (upstream) → pose graph, loop closure, GNSS factors (mine) → `map.pcd` | skeleton | [`mapping/brightdrive_mapping/`](mapping/brightdrive_mapping/README.md) |
 
 ## Simulation
 
@@ -18,6 +19,7 @@ the server image (`docker pull carlasim/carla:0.9.15`, 21 GB).
 |---|---|
 | `carla-server` | `carlasim/carla:0.9.15` pinned by digest, GPU through the `nvidia` runtime, host network, `-RenderOffScreen -quality-level=Epic`, starts in Town03 (`docker/UserEngine.ini`), healthcheck on the RPC port 2000 |
 | `sim` | `docker/Dockerfile` stage `sim`: Humble + numpy from apt + the `carla==0.9.15` wheel. Host network + IPC, runs as your uid/gid, repo at `/ws/src/brightdrive_localization`, bags at `/bags`, idle (`sleep infinity`) until you exec into it |
+| `mapping` | `docker/Dockerfile` stage `mapping`: Humble + GTSAM, PCL, tf2 conversions, GTest, rosbag2 mcap, foxglove_bridge, and FAST-LIO built into the image (`/opt/fast_lio_ws`). Same mounts as `sim` plus maps at `/maps` (`MAPS_DIR`); does not wait for the server (works from bags); idle until you exec into it. Section [Mapping](#mapping) |
 
 Every command below runs from the repo root.
 
@@ -82,3 +84,63 @@ through. Not loaded by default. If the window does not appear: `xhost +SI:localu
   with no client, while Town10HD_Opt was still the startup map and the desktop sat on the NVIDIA GPU (VRAM peak
   6.9 of 8 GB); not seen since Town03 at start and `prime-select on-demand`.
 - The server keeps running between runs; stop it only when you are done (a restart costs the startup time).
+
+## Mapping
+
+FAST-LIO (upstream, pinned, built into the image) and `mapping/brightdrive_mapping` (mine: pose graph, loop closure,
+GNSS factors, map assembly), built from the mounted repo. Commands run from the repo root.
+
+### Build the image
+
+```
+docker compose build mapping     # apt (GTSAM, PCL, tf2, mcap, foxglove) + FAST-LIO compile; the last step prints the pins
+```
+
+The last step fails if `fast_lio` or `fastlio_mapping` does not resolve, if CMake does not find GTSAM 4.2 / PCL /
+Eigen 3.4, or if rosbag2 lacks the mcap plugin. The pins are in `/opt/VERSIONS.txt` in the image.
+
+### Start, exec, build my package
+
+```
+docker compose up -d mapping                 # no server needed
+docker compose exec mapping bash             # Humble + FAST-LIO underlay (+ install/ once built) sourced
+colcon build                                 # inside: builds mapping/ only (docker/colcon_defaults.yaml), RelWithDebInfo,
+                                             # build/ install/ log/ in the repo root (gitignored); re-source or open a new shell
+docker compose run --rm mapping <cmd>        # one-shot command through the entry point (Humble + underlay + install/)
+```
+
+`docker compose exec mapping <cmd>` skips the entry point and has nothing sourced; use `exec mapping bash` or `run --rm`.
+
+### Run FAST-LIO on a bag
+
+```
+docker compose exec mapping bash
+ros2 bag play /bags/<bag> --clock                                                   # terminal 1
+ros2 launch fast_lio mapping.launch.py rviz:=false use_sim_time:=true \
+    config_path:=/ws/src/brightdrive_localization/mapping/brightdrive_mapping/config config_file:=<file>.yaml   # terminal 2
+ros2 run foxglove_bridge foxglove_bridge                                            # optional, port 8765
+```
+
+`config_path` defaults to the upstream `share/fast_lio/config` (`velodyne.yaml`, `ouster64.yaml`, ...). Our YAML goes
+in `mapping/brightdrive_mapping/config/`. `/points_raw` has the Velodyne point layout with `time` in seconds, so start
+from the velodyne handler. FAST-LIO's `pcd_save` writes under `/opt/fast_lio_ws/src/fast_lio/PCD`; the delivered map is
+written by the backend to `/maps` (`MAPS_DIR`).
+
+### What is pinned (from `/opt/VERSIONS.txt`)
+
+| Component | Version / commit | From |
+|---|---|---|
+| ROS 2 | Humble, `ros:humble-ros-base-jammy` pinned by digest | base stage |
+| FAST-LIO | OmerMersin/FAST_LIO_OUSTER `8ffac51a` (2025-11-24, "Initial release") | git clone in the image, `/opt/fast_lio_ws` |
+| ikd-Tree | hku-mars/ikd-Tree `e2e3f4e9` | FAST-LIO submodule |
+| GTSAM | 4.2.0 (`ros-humble-gtsam` 4.2.0-3jammy.20260226) | apt |
+| PCL | 1.12.1 (`libpcl-dev`, pulled by `ros-humble-pcl-ros` 2.4.5) | apt |
+| Eigen | 3.4.0 | apt, base image |
+| GTest | 1.11.0 | apt |
+
+Image 3.25 GB; cold build about 4 min on this laptop (apt 146 s, clone 41 s, FAST-LIO compile 38 s).
+
+### What I wrote vs what I used
+
+- Used unmodified: FAST-LIO (OmerMersin/FAST_LIO_OUSTER, BSD, with hku-mars ikd-Tree), GTSAM 4.2.0, PCL, Eigen, tf2, rosbag2, foxglove_bridge.
+- Mine: everything under `mapping/brightdrive_mapping/` (Apache-2.0), the Docker `mapping` stage and compose service.

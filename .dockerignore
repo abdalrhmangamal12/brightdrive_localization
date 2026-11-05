@@ -3,3 +3,5 @@
 **/build
 data
 *.mcap
+**/install
+**/log
