@@ -24,12 +24,50 @@ RUN echo 'source /opt/ros/humble/setup.bash' >> /etc/bash.bashrc
 
 # ---------------------------------------------------------------------------
 FROM base AS sim
-# carla wheel only. --no-deps, otherwise pip pulls in a second numpy
-RUN python3 -m pip install --no-cache-dir --no-deps carla==0.9.15
-# quick import check
+# ScenarioRunner's Python libraries from apt (the Ubuntu 22.04 builds for Python 3.10: ScenarioRunner's own pins
+# predate 3.10, networkx 2.2 does not import there and Shapely 1.7.1 has no wheel), rosbag2's mcap storage for
+# the recordings, git for the ScenarioRunner clone.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-rosbag2-storage-mcap \
+        git \
+        python3-yaml \
+        python3-networkx \
+        python3-shapely \
+        python3-psutil \
+        python3-ephem \
+        python3-tabulate \
+        python3-matplotlib \
+        python3-six \
+        python3-pydot \
+        python3-distutils \
+        python3-pkg-resources \
+    && rm -rf /var/lib/apt/lists/*
+# carla wheel + ScenarioRunner's pure-Python pins. --no-deps, otherwise pip pulls in a second numpy.
+# opencv: ScenarioRunner pins 4.2.0.32 (no cp310 wheel); 4.7 headless is the last release that imports on numpy 1.21.
+RUN python3 -m pip install --no-cache-dir --no-deps \
+        carla==0.9.15 \
+        py_trees==0.8.3 \
+        xmlschema==1.0.18 \
+        elementpath==1.3.3 \
+        antlr4-python3-runtime==4.10 \
+        simple-watchdog-timer==0.1.1 \
+        opencv-python-headless==4.7.0.72
+# CARLA's `agents` package (route planner, BasicAgent: what our scenario controllers drive with) is not in the
+# PyPI wheel; taken from the server image, so it is the server's own release.
+COPY --from=carlasim/carla:0.9.15@sha256:1af47c314443f4a2d0869ac399c5b5eabde138a5bc39dd31dcbb1540e22f5588 \
+     /home/carla/PythonAPI/carla/agents /opt/carla/PythonAPI/carla/agents
+# ScenarioRunner at the server's version. The tag's commit is checked, so a moved tag fails the build.
+ARG SCENARIO_RUNNER_COMMIT=d12d8bb788201ebf6f03e55b9c5169f9dcb2ea87
+RUN git clone --depth 1 --branch v0.9.15 https://github.com/carla-simulator/scenario_runner.git /opt/scenario_runner \
+    && [ "$(git -C /opt/scenario_runner rev-parse HEAD)" = "${SCENARIO_RUNNER_COMMIT}" ]
+ENV PYTHONPATH=/opt/carla/PythonAPI/carla:/opt/scenario_runner
+# Fail the build, not a run: the wheel next to apt's numpy, agents, ScenarioRunner's imports, mcap storage.
 RUN python3 -c "import carla, numpy; from importlib.metadata import version; \
-    print('carla', version('carla'), carla.__file__); print('numpy', numpy.__version__, numpy.__file__)"
-# TODO later: scenario_runner, carla agents, bridge deps, mcap
+    print('carla', version('carla'), carla.__file__); print('numpy', numpy.__version__, numpy.__file__)" \
+    && python3 -c "from agents.navigation.basic_agent import BasicAgent; print('agents OK')" \
+    && python3 -c "import srunner.scenariomanager.actorcontrols.simple_vehicle_control; print('srunner OK')" \
+    && python3 /opt/scenario_runner/scenario_runner.py --version \
+    && source /opt/ros/humble/setup.bash && ros2 bag record --help | grep -q -E -- '--storage \{[^}]*mcap' && echo 'mcap OK'
 
 # ---------------------------------------------------------------------------
 FROM base AS loc
