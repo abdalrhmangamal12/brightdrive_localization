@@ -26,9 +26,10 @@ RUN echo 'source /opt/ros/humble/setup.bash' >> /etc/bash.bashrc
 FROM base AS sim
 # ScenarioRunner's Python libraries from apt (the Ubuntu 22.04 builds for Python 3.10: ScenarioRunner's own pins
 # predate 3.10, networkx 2.2 does not import there and Shapely 1.7.1 has no wheel), rosbag2's mcap storage for
-# the recordings, git for the ScenarioRunner clone.
+# the recordings, foxglove_bridge to watch a run live (port 8765), git for the ScenarioRunner clone.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-rosbag2-storage-mcap \
+        ros-humble-foxglove-bridge \
         git \
         python3-yaml \
         python3-networkx \
