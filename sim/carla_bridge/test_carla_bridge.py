@@ -1,5 +1,5 @@
 """Unit tests of the bridge's conversions: time stamps, the sweep rule, the sweep assembler's gap check, the IMU
-bias, the GNSS covariance, the `enabled` switch and the camera's JPEG. No server needed; carla and rclpy must import, so run inside the sim container:
+bias, the GNSS covariance, the `enabled` switch, the camera's JPEG, the synchronous-mode watch and the tick grid. No server needed; carla and rclpy must import, so run inside the sim container:
 
   docker compose run --rm --no-deps sim python3 -m pytest -q -p no:cacheprovider /ws/src/brightdrive_localization/sim/carla_bridge
 """
@@ -108,3 +108,58 @@ def test_image_msg_is_jpeg():
     decoded = cb.cv2.imdecode(np.frombuffer(data, np.uint8), cb.cv2.IMREAD_COLOR)
     assert decoded.shape == (4, 8, 3)
     assert decoded[2, 1].argmax() == 0 and decoded[2, 6].argmax() == 2   # BGR: blue left, red right
+
+
+def test_sync_watch_flags_the_first_differing_delta():
+    w = cb.SyncWatch()
+    f32 = 0.009999999776482582                     # 0.01 s as CARLA reports it in synchronous mode
+    assert w.update(f32, 1.00) is False and w.synchronous
+    assert w.update(f32, 1.01) is False and w.synchronous
+    assert w.update(0.01, 1.02) is False            # the first asynchronous frame can still carry the old delta
+    assert w.update(0.00435, 1.03) is True          # a real frame time: not synchronous
+    assert not w.synchronous and w.lost == (0.00435, 1.03)
+    assert w.update(0.0052, 1.04) is False          # reported once
+
+
+class FakeSensor:
+    """What stop_sensors / remove_sensors use of a CARLA sensor: is_alive (property), is_listening() (method)."""
+
+    def __init__(self):
+        self.is_alive, self.listening, self.stops, self.destroyed = True, True, 0, False
+
+    def is_listening(self):
+        return self.listening
+
+    def stop(self):
+        assert self.listening, 'stop() on a sensor that is not listening (CARLA prints a warning)'
+        self.listening, self.stops = False, self.stops + 1
+
+    def destroy(self):
+        self.destroyed = True
+
+
+class FakeWorld:
+    def remove_on_tick(self, tick_id):
+        pass
+
+
+def test_a_stopped_sensor_is_not_stopped_again_when_removed():
+    s, sensors, ticks = FakeSensor(), [], [7]
+    sensors.append(s)
+    cb.stop_sensors(sensors)                      # the world turned asynchronous
+    cb.remove_sensors(FakeWorld(), sensors, ticks)   # then the car went
+    assert s.stops == 1 and s.destroyed and not s.listening and sensors == [] and ticks == []
+
+
+def test_tick_grid_accepts_only_whole_ticks_after_the_previous_measurement():
+    g, f32, t = cb.TickGrid(0.01), 0.009999999776482582, 1000.0
+    assert g.accept(t)                                   # the first measurement sets the grid
+    for _ in range(5):                                   # IMU: every tick, float32 steps
+        t += f32
+        assert g.accept(t)
+    assert g.accept(t + 0.11) and g.accept(t + 0.21)     # GNSS: 11 ticks (first fix), then 10
+    t += 0.21
+    assert not g.accept(t + 0.00454)                     # the first asynchronous frame (4.54 ms measured)
+    assert not g.accept(t + 0.00454 + 0.0047)            # and the next one
+    assert g.accept(t + 0.00454 + 0.0047 + 0.01)         # relative to the previous: a tick later is on grid again
+    assert g.gap_s == pytest.approx(0.01)

@@ -8,6 +8,15 @@ ticks the world: ScenarioRunner does that. It exits on Ctrl-C / SIGTERM (exit 0)
 lost: an RPC that fails, or no tick for WATCHDOG_S seconds while a short probe of the server fails too (a server
 that answers but does not tick is only reported, once, and the wait goes on).
 
+The sensors publish only while the world is synchronous. ScenarioRunner restores asynchronous mode when a scenario
+ends, before it removes the car; from then on the server ticks at its own pace and every sensor would measure at
+irregular intervals. A synchronous tick always reports the same delta (the fixed step); the first tick whose delta
+differs marks the change (SyncWatch), the sensors are stopped and later measurements are dropped. The data of the
+first asynchronous frame can arrive before that frame's snapshot, so every measurement is also checked against the
+tick grid (TickGrid): in synchronous mode each one comes a whole number of ticks after the previous one of its
+sensor, an asynchronous one does not. /clock goes on until the car is gone, so its count stays equal to the ground
+truth's.
+
 Inside the sim container (ROS 2 sourced):
   python3 -u /ws/src/brightdrive_localization/sim/carla_bridge/carla_bridge.py [--scenario nominal]
 
@@ -19,6 +28,7 @@ covariance is diag(sigma^2) of that noise in metres, so the estimator's measurem
 import argparse
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -63,6 +73,54 @@ SLICE_GAP_TOL_S = 1e-6
 
 class ServerLost(RuntimeError):
     """The CARLA server stopped answering."""
+
+
+class SyncWatch:
+    """Tells a synchronous world from an asynchronous one by the tick delta: with a fixed step every tick reports
+    the same delta_seconds (0.01 s as a float32: 0.009999999776, measured constant over 2000 ticks); without one
+    the delta is the real frame time and varies (4-10 ms measured). ScenarioRunner's clean-up sets
+    fixed_delta_seconds to None, so this catches its switch within one or two ticks (the first asynchronous frame
+    can still carry the old delta)."""
+
+    def __init__(self, tol=1e-6):
+        self.tol = tol
+        # delta of the first tick seen; (delta, sim time) of the first tick that differed, None while synchronous.
+        self.first, self.lost = None, None
+
+    def update(self, delta, t):
+        """Feed one tick. True once: on the first tick that is not synchronous."""
+        if self.first is None:
+            self.first = delta
+        elif self.lost is None and abs(delta - self.first) > self.tol:
+            self.lost = (delta, t)
+            return True
+        return False
+
+    @property
+    def synchronous(self):
+        return self.lost is None
+
+
+class TickGrid:
+    """Accepts a measurement only when it comes a whole number of ticks after the previous one of its sensor. In
+    synchronous mode every stamp sits on the tick grid (measured: IMU gaps exactly 10 ms, GNSS 100 ms and one 110 ms,
+    camera 90-110 ms; the float32 tick drifts 2e-10 s per tick, so compare with the previous measurement, not the
+    first); an asynchronous frame does not (its frame time is the real one, 4-10 ms measured). Closes SyncWatch's
+    one-measurement race: the first asynchronous frame's data can reach the bridge before that frame's snapshot."""
+
+    def __init__(self, tick_s, tol_s=1e-5):
+        self.tick_s, self.tol_s = float(tick_s), tol_s
+        self.last, self.gap_s = None, None
+
+    def accept(self, t):
+        """Feed one measurement time. False = off the grid: do not publish it."""
+        on_grid = True
+        if self.last is not None:
+            self.gap_s = t - self.last
+            k = self.gap_s / self.tick_s
+            on_grid = abs(k - round(k)) * self.tick_s <= self.tol_s
+        self.last = t
+        return on_grid
 
 
 def server_answers(client):
@@ -299,6 +357,14 @@ def find_hero(client, role_name):
         time.sleep(0.5)
 
 
+def stop_sensors(sensors):
+    """Stop the measurements; the sensor actors stay until remove_sensors destroys them.
+    is_listening is a method in CARLA's Python API (is_alive is a property): the bare name is always true."""
+    for sensor in sensors:
+        if sensor.is_alive and sensor.is_listening():
+            sensor.stop()
+
+
 def remove_sensors(world, sensors, tick_ids):
     """Remove our /clock callback and our sensors (sensors are NOT destroyed with their car).
     Each one leaves its list before it is removed, so a second call (car gone, then Ctrl-C) does nothing twice."""
@@ -308,7 +374,8 @@ def remove_sensors(world, sensors, tick_ids):
         sensor = sensors.pop()
         # It may be gone already if the run was stopped half-way through this loop.
         if sensor.is_alive:
-            sensor.stop()
+            if sensor.is_listening():
+                sensor.stop()
             sensor.destroy()
 
 
@@ -398,13 +465,37 @@ def main():
             log.info(f'found {hero.type_id} (id {hero.id}); attaching {", ".join(active)}')
 
             # /clock: CARLA calls this function once per tick with the new simulation time. It also notes the
-            # wall time of the tick for the watchdog below.
+            # wall time of the tick for the watchdog below, and feeds the tick delta to the synchronous-mode
+            # watch: the first asynchronous tick wakes the wait loop (lost_sync), which stops the sensors.
             last_tick = [time.monotonic()]
+            watch, lost_sync = SyncWatch(), threading.Event()
 
             def on_tick(snap):
                 clock_pub.publish(Clock(clock=ros_time(snap.timestamp.elapsed_seconds)))
                 last_tick[0] = time.monotonic()
+                if watch.update(snap.timestamp.delta_seconds, snap.timestamp.elapsed_seconds):
+                    lost_sync.set()
             tick_ids.append(world.on_tick(on_tick))
+
+            off_grid = {}
+
+            def while_synchronous(name, convert):
+                """A sensor callback that drops measurements once the world is asynchronous (the stop RPC takes
+                a moment; a measurement already on its way would otherwise still be published), and any measurement
+                off the tick grid (TickGrid: the first asynchronous frame's data can beat its snapshot)."""
+                grid = TickGrid(tick_s)
+
+                def callback(m):
+                    if not watch.synchronous:
+                        return
+                    if not grid.accept(m.timestamp):
+                        if name not in off_grid:
+                            log.info(f'{name}: measurement {grid.gap_s * 1e3:.2f} ms after the previous one is off the '
+                                     f'{tick_s * 1e3:g} ms tick grid: dropped (the world is no longer synchronous)')
+                        off_grid[name] = off_grid.get(name, 0) + 1
+                        return
+                    convert(m)
+                return callback
 
             # Spawn each sensor on the car and connect it to its converter + publisher.
             lib = world.get_blueprint_library()
@@ -421,26 +512,33 @@ def main():
                     log.info(f'LiDAR: {n_slices} slice(s) per published sweep '
                              f'(tick {tick_s} s x {n_slices} = one revolution at '
                              f'{s["attributes"]["rotation_frequency"]} Hz); fields x y z intensity time ring')
-                    sensor.listen(assembler.add)
+                    sensor.listen(while_synchronous(name, assembler.add))
                 elif name == 'imu':
-                    sensor.listen(lambda m, f=frame, p=pub: p.publish(imu_msg(m, f, gyro_var, accel_var, accel_bias)))
+                    sensor.listen(while_synchronous(
+                        name, lambda m, f=frame, p=pub: p.publish(imu_msg(m, f, gyro_var, accel_var, accel_bias))))
                 elif name == 'gnss':
-                    sensor.listen(lambda m, f=frame, p=pub: p.publish(gnss_msg(m, f, gnss_sigma_m)))
+                    sensor.listen(while_synchronous(name, lambda m, f=frame, p=pub: p.publish(gnss_msg(m, f, gnss_sigma_m))))
                 else:
                     # The demo camera: one JPEG per frame.
                     quality = int(s.get('jpeg_quality', 80))
                     log.info(f'camera: {s["attributes"]["image_size_x"]}x{s["attributes"]["image_size_y"]} every '
                              f'{s["attributes"]["sensor_tick"]} s, JPEG quality {quality}, on {s["topic"]} (demo only)')
-                    sensor.listen(lambda m, f=frame, p=pub, q=quality: p.publish(image_msg(m, f, q)))
+                    sensor.listen(while_synchronous(name, lambda m, f=frame, p=pub, q=quality: p.publish(image_msg(m, f, q))))
                 sensors.append(sensor)
 
             # Nothing else to do while the car exists: the callbacks publish. Check twice a second if it is gone
-            # (a scenario ends by destroying it). world.get_actors() reads the client's copy of the world state,
-            # which every tick refreshes, not the server: it sees the car go after the next tick, but it never
-            # sees a dead server. The watchdog does: no tick for WATCHDOG_S -> probe the server.
+            # (a scenario ends by destroying it), or at once when the world turned asynchronous: then the sensors
+            # stop and only /clock goes on. world.get_actors() reads the client's copy of the world state, which
+            # every tick refreshes, not the server: it sees the car go after the next tick, but it never sees a
+            # dead server. The watchdog does: no tick for WATCHDOG_S -> probe the server.
             quiet = False
             while rclpy.ok() and hero.id in [a.id for a in world.get_actors().filter('vehicle.*')]:
-                time.sleep(0.5)
+                if lost_sync.wait(0.5):
+                    lost_sync.clear()
+                    stop_sensors(sensors)
+                    delta, t = watch.lost
+                    log.info(f'world no longer synchronous at sim time {t:.2f} s (tick {delta * 1e3:.2f} ms, not '
+                             f'{watch.first * 1e3:.2f} ms): sensors stopped; /clock goes on until the car is gone')
                 if time.monotonic() - last_tick[0] < WATCHDOG_S:
                     quiet = False
                 elif not server_answers(client):
