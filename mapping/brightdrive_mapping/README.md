@@ -9,6 +9,10 @@ service), plus a georeferencing variable set by GNSS. Pure C++ core (`mapping_co
 one namespace of free functions) plus a thin ROS 2 node. The system-level picture is in the repository README
 under "Mapping pipeline".
 
+Input contract: an odometry pose and a body-frame cloud with the same stamp, plus GNSS fixes. Any LIO front-end
+that publishes these works without code changes; the odometry frame name comes from `origin_frame` in
+`backend.yaml`, and no class, function or member name refers to FAST-LIO.
+
 ## Class diagram
 
 ```mermaid
@@ -29,14 +33,14 @@ classDiagram
         -loop_checked_ : set~int~
         -mtx_ : mutex
         +Backend(cfg : const BackendConfig ref)
-        +onOdometry(t : double, T_odom : Isometry3d) void
-        +onScan(t : double, T_odom : Isometry3d, cloud : CloudPtr) bool
-        +onGnss(fix : const GnssFix ref) void
-        +loopStep() bool
-        +mapToOrigin() optional~Isometry3d~
-        +keyframePoses() vector~Isometry3d~
-        +mapCloud(leaf : double) CloudPtr
-        +save(dir : string) bool
+        +addOdometry(t : double, T_odom : Isometry3d) void
+        +processScan(t : double, T_odom : Isometry3d, cloud : CloudPtr) bool
+        +addGnssFix(fix : const GnssFix ref) void
+        +tryLoopClosure() bool
+        +mapToOdomTransform() optional~Isometry3d~
+        +keyframePathInMap() vector~Isometry3d~
+        +buildGlobalMap(leaf : double) CloudPtr
+        +saveMap(dir : string) bool
         +aligned() bool
         +numKeyframes() int
         +numLoops() int
@@ -115,6 +119,7 @@ classDiagram
         +align_distance : double
         +max_time_shift : double
         +gnss_huber_k : double
+        +gnss_default_sigma : double
         +loop_enable : bool
         +loop_radius : double
         +loop_time_diff : double
@@ -123,7 +128,6 @@ classDiagram
         +loop_fitness : double
         +loop_rot_scale : double
         +loop_trans_scale : double
-        +loop_robust : bool
         +map_frame : string
         +origin_frame : string
         +map_name : string
@@ -133,7 +137,7 @@ classDiagram
     class geo {
         <<namespace, free functions>>
         +llaToMap(lat_deg, lon_deg, alt_m)$ Vector3d
-        +alignYaw(p_ant_odom : vector~Vector3d~, p_map : vector~Vector3d~)$ Isometry3d
+        +align4Dof(p_ant_odom : vector~Vector3d~, p_map : vector~Vector3d~)$ Isometry3d
     }
 
     class BackendNode {
@@ -150,7 +154,7 @@ classDiagram
         +gnssCallback(msg) void
         +loopThread() void
         +mapTimer() void
-        +saveMap(req, res) void
+        +saveMapCallback(req, res) void
         +stop() void
     }
 
@@ -159,7 +163,7 @@ classDiagram
     Backend "1" *-- "0..*" Keyframe : owns
     Backend "1" *-- "0..*" LoopEdge : owns
     Backend "1" o-- "0..*" GnssFix : buffers until aligned
-    Backend ..> geo : alignYaw
+    Backend ..> geo : align4Dof
     PoseGraph "1" *-- "1" Impl : pimpl, GTSAM lives here
     BackendNode "1" *-- "1" Backend : owns
     BackendNode ..> geo : llaToMap
@@ -174,10 +178,12 @@ the loop candidate search and the four writers (pcd, TUM, map.yaml, loops.txt) a
 
 Design notes behind the diagram:
 
-- Graph frame = `fastlio_odom`. X(0) gets a tight prior at the first keyframe's `T_odom`; every later keyframe
-  adds one node and one odometry factor with sigma 1 cm / 0.06°, then one iSAM2 `update()`.
-- Optimized poses live only in the graph. `Keyframe` has no `opt` field; `Backend` reads `keyframePoses()` when it
-  needs them, so nothing goes stale after a loop closure.
+- Graph frame = the front-end's odometry frame (`origin_frame`). X(0) gets a tight prior at the first keyframe's
+  `T_odom`; every later keyframe adds one node and one odometry factor with sigma 1 cm / 0.06°, then one iSAM2
+  `update()`. The new node's guess is `graph_.keyframePose(k-1) · T_rel`, the optimized previous pose, not
+  `keyframes_[k-1].T_odom · T_rel`.
+- Optimized poses live only in the graph. `Keyframe` has no `opt` field; `Backend` reads `graph_.keyframePoses()`
+  when it needs them, so nothing goes stale after a loop closure.
 - `PoseGraph` API: `*Node` adds a value, `*Factor` adds an edge. Eigen types only (`Isometry3d`, `Vector3d`,
   `Matrix3d`, `Vector6d`); the header has no GTSAM include. drone_slam's plain `Pose` struct existed because of
   two Eigen builds; this image has one. Not thread-safe: `Backend` holds the mutex for every call (said in the
@@ -201,20 +207,31 @@ Design notes behind the diagram:
 - Guards: `addGnssFactor` before `addMapOriginNode` throws; `addMapOriginNode` twice throws.
 - Sigmas everywhere: every noise parameter is a sigma, not a variance, in GTSAM order rot x, y, z [rad] then
   trans x, y, z [m], built with `Diagonal::Sigmas`. `backend.yaml` keys are named `*_sigma`.
-- `geo::alignYaw` is a 4-DoF fit (x, y, z, yaw) of antenna positions in odom (`T_odom · lever_arm`) against
+- `geo::align4Dof` is a 4-DoF fit (x, y, z, yaw) of antenna positions in odom (`T_odom · lever_arm`) against
   `p_map`. It gives T_mo0 once the keyframe path length reaches 30 m.
-- `batchOptimize()` runs only in `save()`: Levenberg-Marquardt on `all_factors` with the current `estimate` as
+- `odom_hist_` keeps the full run, never trimmed: `tryAlign` interpolates every buffered fix since the start.
+  About 12k poses for 10 min, about 1.5 MB.
+- GNSS time shift: a fix is attached to the keyframe nearest in time if within `max_time_shift` = 0.2 s, moved to
+  the keyframe time with `z_k = z_g + R_mo · (interpolate(t_k) · l − interpolate(t_g) · l)`. At 15 m/s and 1° of
+  R_mo error this adds less than 1 cm.
+- GNSS covariance fallback: the node passes a zero `cov` when the NavSatFix covariance is zero or
+  `COVARIANCE_TYPE_UNKNOWN`; `addGnssFix` replaces a zero `cov` with diag(`gnss_default_sigma`²), 0.3 m, because
+  `Gaussian::Covariance(0)` is singular.
+- `batchOptimize()` runs only in `saveMap()`: Levenberg-Marquardt on `all_factors` with the current `estimate` as
   the initial guess; the result replaces `estimate`. After alignment the live path uses `update()` with extra
   iterations, no reseeding.
 - `BackendConfig` holds only what `Backend` uses. Topic names, `publish_tf`, loop frequency and the map period
-  stay in the node. The two frame names are in the config because `map.yaml` records them.
+  stay in the node. The two frame names are in the config because `map.yaml` records them. No `loop_robust`
+  flag: `addLoopFactor` is always Cauchy-robust.
 - One lock. The node runs the odometry and cloud callbacks in one mutually exclusive callback group; a
-  loop-closure `std::thread` calls `loopStep()` at the loop frequency; a timer publishes the map. ICP and map
-  assembly run on snapshots outside `mtx_`.
-- TF `map → fastlio_origin` = T_mo · T_corr, published in `odomCallback` with that message's stamp. With GNSS
-  enabled and not yet aligned `mapToOrigin()` is empty and nothing is published; the alignment moment is logged.
-  With GNSS disabled T_mo = I and T_corr alone is published.
-- `save()` runs from the service and from `main()` after `spin()` returns (via `stop()`), never from a destructor.
+  loop-closure `std::thread` calls `tryLoopClosure()` at the loop frequency; a timer calls `buildGlobalMap()`.
+  Both copy the poses (`graph_.keyframePoses()`) and the cloud pointers under `mtx_`, release it, run ICP or map
+  assembly on the copy, and lock again only to add the factor.
+- TF `map_frame → origin_frame` = T_mo · T_corr, published in `odomCallback` with that message's stamp. With GNSS
+  enabled and not yet aligned `mapToOdomTransform()` is empty and nothing is published; the alignment moment is
+  logged. With GNSS disabled T_mo = I and T_corr alone is published.
+- `saveMap()` runs from the service and from `main()` after `spin()` returns (via `stop()`), never from a
+  destructor.
 - Dropped from drone_slam: `marginalCovariance`, the odom-frame pcd, `transformations.pcd`, `summary.txt`.
 
 ## Responsibilities
@@ -222,44 +239,44 @@ Design notes behind the diagram:
 - `Backend`: turns paired scans, odometry and fixes into keyframes, graph factors and the map; owns all state and
   the one mutex.
 - `PoseGraph`: the only place GTSAM types appear; keyframe and map-origin nodes, prior, odometry, loop and GNSS
-  factors, iSAM2 updates, the batch solve for `save`, poses out.
+  factors, iSAM2 updates, the batch solve for `saveMap`, poses out.
 - `Keyframe`, `GnssFix`, `LoopEdge`: immutable data records; `GnssFix` is already in map metres with the
-  message covariance.
+  message covariance, zero when the message has none.
 - `BackendConfig`: every `backend.yaml` value with its unit, validated once in the `Backend` constructor.
 - `geo`: lat/lon/alt to map metres with the Mercator formula validated in `eval/` (lat0 = lon0 = 0,
-  R = 6 378 137 m, decisions.md §7) and the 4-DoF T_mo0 from antenna positions.
+  R = 6 378 137 m, decisions.md §7) and `align4Dof`, the 4-DoF T_mo0 from antenna positions.
 - `BackendNode`: ROS wiring only: parameters and their startup log, stamp pairing, message conversion, TF, path
   and map publishers, loop thread, map timer, save service, `stop()`.
 
 ## Call sequence
 
-### One keyframe (`onScan`)
+### One keyframe (`processScan`)
 
-1. The node pairs a `/cloud_registered_body` with the `/Odometry` of the same stamp and calls
-   `onScan(t, T_odom, cloud)`.
+1. The node pairs a body-frame cloud with the odometry pose of the same stamp and calls
+   `processScan(t, T_odom, cloud)`.
 2. Lock. `isKeyframe`: distance to the last keyframe ≥ 1.0 m or angle ≥ 0.2 rad, else return false.
 3. `preprocess`: range crop 3 to 100 m, voxel 0.2 m, body frame, PointXYZI.
 4. Push `Keyframe{k, t, T_odom, cloud}`; `path_len_` grows by the step.
 5. k = 0: `addKeyframeNode(0, T_odom)` and `addPriorFactor(0, T_odom, prior_sigma)` (tight).
-   Else `T_rel = T_odom,k-1⁻¹ · T_odom,k`, `addKeyframeNode(k, X_k-1 · T_rel)`,
-   `addOdomFactor(k-1, k, T_rel, odom_sigma)`.
+   Else `T_rel = T_odom,k-1⁻¹ · T_odom,k`, `addKeyframeNode(k, graph_.keyframePose(k-1) · T_rel)` (optimized
+   previous pose), `addOdomFactor(k-1, k, T_rel, odom_sigma)`.
 6. `update()`; `T_corr_ = X_k · T_odom,k⁻¹`.
 7. GNSS, if enabled. Aligned: `attachGnss` for buffered fixes whose nearest keyframe in time is k.
    Not aligned and `path_len_` ≥ 30 m: `tryAlign`: antenna positions `interpolate(t_fix) · lever_arm` for every
-   buffered fix, `geo::alignYaw` against their `p_map` → T_mo0, `addMapOriginNode(T_mo0, origin_sigma)`,
+   buffered fix, `geo::align4Dof` against their `p_map` → T_mo0, `addMapOriginNode(T_mo0, origin_sigma)`,
    `attachGnss` for all buffered fixes, `update(extra_iterations)`, refresh `T_corr_`, set `aligned_`, log the
    moment.
 8. Unlock, return true. The node logs the keyframe count.
 
-`attachGnss` picks the keyframe nearest in time (≤ 50 ms, else the fix is dropped), shifts the fix to the
-keyframe time with the odometry displacement between the two stamps rotated by the current R_mo, then calls
-`addGnssFactor(k, p, cov, lever_arm, huber_k)`.
+`attachGnss` picks the keyframe nearest in time (≤ 0.2 s, else the fix is dropped), shifts the fix to the
+keyframe time with `z_k = z_g + R_mo · (interpolate(t_k) · l − interpolate(t_g) · l)` using the current R_mo, then
+calls `addGnssFactor(k, z_k, cov, lever_arm, huber_k)`.
 
-TF is not part of this sequence: `odomCallback` publishes `mapToOrigin()` on every `/Odometry`.
+TF is not part of this sequence: `odomCallback` publishes `mapToOdomTransform()` on every odometry message.
 
-### One loop step (`loopStep`, from the loop thread)
+### One loop step (`tryLoopClosure`, from the loop thread)
 
-1. Lock, snapshot: current id, all estimates, cloud pointers. Unlock.
+1. Lock, copy: current id, `graph_.keyframePoses()`, cloud pointers. Unlock. Steps 2 to 5 run on the copy.
 2. `findLoopCandidate(cur)`: nearest keyframe within 10 m that is at least 30 s older and not in
    `loop_checked_`. None: return false.
 3. Source = current cloud at X_cur. Target = keyframes prev ± 15 at their estimates, voxel 0.4 m.
@@ -268,10 +285,10 @@ TF is not part of this sequence: `odomCallback` publishes `mapToOrigin()` on eve
 6. Lock. `addLoopFactor(prev, cur, T_rel, sigma from fitness × scales)` (Cauchy robust inside), `update(5)`,
    refresh `T_corr_`, push the edge. Unlock, return true.
 
-### Save (`save(dir)`, from the service and from `main()` after spin)
+### Save (`saveMap(dir)`, from the service and from `main()` after spin)
 
 1. Lock. `batchOptimize()`: Levenberg-Marquardt on `all_factors` from the current estimate; re-read
-   `keyframePoses()` and `mapOrigin()`.
+   `graph_.keyframePoses()` and `graph_.mapOrigin()`.
 2. Poses in the map frame: `T_mo · X_k`.
 3. Write `<map_name>.pcd` (keyframe clouds at those poses, voxel 0.2 m), `trajectory_optimized_tum.txt`
    (`t x y z qx qy qz qw`), `map.yaml`, `loops.txt` (`cur prev fitness`). Unlock.
