@@ -1,0 +1,99 @@
+# FAST-LIO2 (OmerMersin/FAST_LIO_OUSTER @ 8ffac51, unmodified) on the CARLA mapping bag.
+# Run (mapping container, bag recorded by sim/scripts/run.sh mapping):
+#   ros2 launch fast_lio mapping.launch.py config_path:=<this dir> config_file:=fastlio_carla.yaml \
+#       use_sim_time:=true rviz:=false
+#   ros2 bag play /bags/mapping --clock --start-offset 2.0
+# --start-offset: FAST-LIO initializes gravity and b_g from the first ~10 IMU samples it sees, with no stillness
+# check. The first ~0.5 s of every run is the spawn drop (|a| up to 4e4 m/s^2): start the playback inside the
+# 5 s still window (start_delay_s), never at 0.
+
+/**:
+  ros__parameters:
+    # Raw points, no edge/plane extraction (FAST-LIO2 direct mode).
+    feature_extract_enable: false
+    # Keep every 3rd point before the voxel filter: 32 768 points per sweep -> ~11 000, then filter_size_surf
+    # leaves a few thousand for the update. 2 = denser and slower; check the per-scan time in the log first.
+    point_filter_num: 3
+    # Iterated update: max re-linearizations per scan (FAST-LIO default 4; it usually converges in 2-3).
+    max_iteration: 4
+    # Voxel size (m) of the scan points used in the update, and of the points FAST-LIO keeps in its ikd-tree.
+    # 0.5 / 0.5 = FAST-LIO's outdoor default; urban Town03 has walls and kerbs well above that scale.
+    filter_size_surf: 0.5
+    filter_size_map: 0.5
+    # FAST-LIO keeps a local map in a cube this size (m), centred on its start; the cube moves (and deletes the
+    # far side) when the LiDAR comes within 1.5 x det_range of an edge. The main route spans ~240 x 270 m, so at
+    # 1000 m the cube never moves: FAST-LIO keeps the whole town for the full two laps.
+    cube_side_length: 1000.0
+    runtime_pos_log_enable: false
+    # Only used by publish.map_en, which stays off.
+    map_file_path: ""
+
+    common:
+      # sensors.yaml: lidar.topic, imu.topic
+      lid_topic: /points_raw
+      imu_topic: /imu/data
+      # Both stamps come from the same CARLA tick (synchronous mode): no offset, no self-sync.
+      time_sync_en: false
+      time_offset_lidar_to_imu: 0.0
+
+    preprocess:
+      # 2 = Velodyne handler: reads x y z intensity time ring.
+      lidar_type: 2
+      # sensors.yaml: lidar.attributes.channels
+      scan_line: 64
+      # rotation_frequency 20 Hz. Only used if the time field were missing (it is not); set for consistency.
+      scan_rate: 20
+      # The bridge's `time` field is seconds after the stamp (0 to 0.04).
+      timestamp_unit: 0
+      # Minimum range (m). Drops returns from the car itself (roof LiDAR at 1.9 m, car ~4.9 x 1.9 m: body within
+      # ~2.6 m). The nearest ground return is at 1.9 / tan(22.5 deg) = 4.6 m, so 3.0 loses no road points.
+      blind: 3.0
+
+    mapping:
+      # IMU noise. FAST-LIO uses these as the per-sample variance, Q x dt^2 (IKFoM predict), not as a density.
+      # CARLA's true per-reading values (sensors.yaml) would be acc 0.05^2 = 2.5e-3, gyr 0.005^2 = 2.5e-5.
+      # Kept at FAST-LIO's default 0.1: the larger Q also covers its first-order integration (p += v dt, no
+      # 1/2 a dt^2) through the ~1.5 g corners measured in nominal/high_speed_turns. Tune only if the odometry is
+      # worse than expected against /eval/ground_truth, and log the change in decisions.md.
+      acc_cov: 0.1
+      gyr_cov: 0.1
+      # Bias random walk. CARLA has a constant gyro bias (0.001-0.002 rad/s) and no accel bias.
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+      # Spinning LiDAR, full circle; range = sensors.yaml lidar.attributes.range.
+      fov_degree: 360.0
+      det_range: 100.0
+      # The extrinsic is known exactly in simulation: do not estimate it.
+      extrinsic_est_en: false
+      # LiDAR pose in the IMU frame (p_imu = R * p_lidar + T). IMU = base_link at (0, 0, 0); LiDAR at
+      # (0, 0, 1.9), level, facing forward (sensors.yaml). Same ROS axes for both: R = identity.
+      extrinsic_T: [0.0, 0.0, 1.9]
+      extrinsic_R: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+    frames:
+      # Own names on purpose. FAST-LIO publishes a static identity map_frame -> odom_frame and a dynamic
+      # odom_frame -> body_frame; with these names that is a separate TF subtree that never collides with the
+      # project's map -> odom -> base_link. body_frame is the IMU (the pose FAST-LIO estimates is world -> IMU);
+      # here IMU = base_link, but the name keeps that explicit.
+      map_frame: fastlio_origin
+      odom_frame: fastlio_odom
+      body_frame: fastlio_imu
+
+    publish:
+      # /path for a quick look in Foxglove.
+      path_en: true
+      scan_publish_en: true
+      # /cloud_registered (world frame, viz only): voxel-downsampled is enough and keeps bandwidth low.
+      # /cloud_registered_body is always the full deskewed scan, whatever this flag says.
+      dense_publish_en: false
+      # /cloud_registered_body: deskewed scan in the IMU frame at the scan end time. The keyframe logger stores
+      # this together with /Odometry; the map is rebuilt from these after the pose graph.
+      scan_bodyframe_pub_en: true
+
+    pcd_save:
+      # Off: FAST-LIO's own map is in fastlio_odom (not georeferenced) and two laps of dense scans grow without
+      # bound in memory. map.pcd is assembled by the backend from optimized poses.
+      pcd_save_en: false
+      interval: -1
