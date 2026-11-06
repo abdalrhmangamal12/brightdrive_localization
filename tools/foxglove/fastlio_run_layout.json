@@ -1,0 +1,198 @@
+{
+  "configById": {
+    "3D!odom": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 450,
+        "phi": 25,
+        "thetaOffset": 0,
+        "target": [0, 0, 0],
+        "targetOffset": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-none",
+      "followTf": "fastlio_odom",
+      "scene": {
+        "enableStats": false,
+        "backgroundColor": "#15161a",
+        "transforms": { "showLabel": false, "axisSize": 0.4 }
+      },
+      "transforms": {},
+      "topics": {
+        "/path": {
+          "visible": true,
+          "lineWidth": 0.6,
+          "gradient": ["#3e63dd", "#e5484d"]
+        },
+        "/Odometry": {
+          "visible": true,
+          "type": "axis",
+          "axisScale": 3
+        },
+        "/cloud_registered_body": { "visible": false },
+        "/eval/ground_truth": { "visible": false }
+      },
+      "layers": {
+        "grid-odom": {
+          "visible": true,
+          "frameLocked": true,
+          "label": "Grid 50 m",
+          "instanceId": "grid-odom",
+          "layerId": "foxglove.Grid",
+          "frameId": "fastlio_odom",
+          "size": 1000,
+          "divisions": 20,
+          "lineWidth": 1,
+          "color": "#2a2e36",
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0]
+        }
+      },
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {}
+    },
+    "3D!body": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 60,
+        "phi": 45,
+        "thetaOffset": 90,
+        "target": [0, 0, 0],
+        "targetOffset": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-none",
+      "followTf": "fastlio_imu",
+      "scene": {
+        "enableStats": false,
+        "backgroundColor": "#15161a",
+        "transforms": { "showLabel": false, "axisSize": 1 }
+      },
+      "transforms": {},
+      "topics": {
+        "/cloud_registered_body": {
+          "visible": true,
+          "pointSize": 2,
+          "pointShape": "circle",
+          "colorMode": "colormap",
+          "colorMap": "turbo",
+          "colorField": "z",
+          "explicitAlpha": 1,
+          "decayTime": 0
+        },
+        "/path": { "visible": false },
+        "/Odometry": { "visible": false },
+        "/eval/ground_truth": { "visible": false }
+      },
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {}
+    },
+    "Plot!speed": {
+      "title": "GT forward speed (m/s)",
+      "paths": [
+        {
+          "value": "/eval/ground_truth.twist.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "v fwd",
+          "color": "#3e63dd"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!yawrate": {
+      "title": "GT yaw rate (rad/s)",
+      "paths": [
+        {
+          "value": "/eval/ground_truth.twist.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "wz",
+          "color": "#e5484d"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!height": {
+      "title": "FAST-LIO z in fastlio_odom (m)",
+      "paths": [
+        {
+          "value": "/Odometry.pose.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "z",
+          "color": "#30a46c"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": { "speed": 1 },
+  "layout": {
+    "direction": "row",
+    "splitPercentage": 62,
+    "first": {
+      "direction": "column",
+      "splitPercentage": 55,
+      "first": "3D!odom",
+      "second": "3D!body"
+    },
+    "second": {
+      "direction": "column",
+      "splitPercentage": 34,
+      "first": "Plot!speed",
+      "second": {
+        "direction": "column",
+        "splitPercentage": 50,
+        "first": "Plot!yawrate",
+        "second": "Plot!height"
+      }
+    }
+  }
+}
