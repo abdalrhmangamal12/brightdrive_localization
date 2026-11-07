@@ -1,4 +1,4 @@
-# One Dockerfile, four stages: base, sim (CARLA client), mapping, loc (estimator = mapping + small_gicp).
+# One Dockerfile, four stages: base, sim (CARLA client), mapping, loc (estimator).
 # Build one with:  docker compose build sim
 
 # pinned by digest like the carla image; retag: docker buildx imagetools inspect ros:humble-ros-base-jammy
@@ -155,35 +155,89 @@ ENTRYPOINT ["/mapping_entrypoint.sh"]
 CMD ["bash"]
 
 # ---------------------------------------------------------------------------
-# loc = the mapping stage plus what the localizer adds. One container then builds both ament packages
-# (docker/colcon_defaults.yaml lists mapping and localization) and the mapping tools stay available for replays.
-# Shared with mapping: PCL, tf2, mcap, foxglove, GeographicLib (the localizer copies mapping's geo.hpp/geo.cpp to
-# rebuild a map's projector from map.yaml), yaml-cpp (reads map.yaml).
-FROM mapping AS loc
+FROM base AS loc
+# The localizer (localization/) and eskf/, built from the mounted repo with colcon (docker/colcon_defaults_loc.yaml),
+# plus the evaluation tools. Already in base: Eigen 3.4, yaml-cpp, tf2 / tf2_ros / tf2_eigen, rclcpp and the
+# message packages, rosbag2_cpp, GCC 11 with OpenMP (libgomp), git, colcon.
+# Added here:
+#   ros-humble-pcl-conversions        PCL 1.12 (pulls libpcl-dev): the map PCD reader; PointCloud2 conversions
+#   ros-humble-rosbag2-storage-mcap   the bags are mcap (match_bag, ros2 bag play)
+#   libgeographic-dev                 geo.hpp/geo.cpp (copied from mapping) rebuild the map's projector
+#   libgtest-dev                      eskf's unit tests (colcon test)
+#   python3-matplotlib, -scipy, ...   eval/ scripts and evo's dependencies, all from apt (numpy stays apt's 1.21.5)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libyaml-cpp-dev \
+        ros-humble-pcl-conversions \
+        ros-humble-rosbag2-storage-mcap \
+        libgeographic-dev \
+        libgtest-dev \
+        python3-matplotlib \
+        python3-scipy \
+        python3-pandas \
+        python3-seaborn \
+        python3-pil \
+        python3-pygments \
+        python3-colorama \
+        python3-natsort \
+        python3-argcomplete \
+        python3-numexpr \
+        python3-packaging \
     && rm -rf /var/lib/apt/lists/*
 
+# evo for the trajectory metrics. 1.28.0 is the newest release that accepts apt's numpy 1.21.5 and matplotlib 3.5.1;
+# the constraints make pip fail instead of replacing them.
+RUN printf '%s\n' 'numpy==1.21.5' 'matplotlib==3.5.1' > /tmp/apt_pins.txt \
+    && pip3 install --no-cache-dir -c /tmp/apt_pins.txt evo==1.28.0 \
+    && rm /tmp/apt_pins.txt
+
 # small_gicp (VGICP scan matcher), header-only, at a fixed commit. Plain clone, then the commit is checked; the helper
-# library is not built (it needs fmt), the package includes the headers with -I${SMALL_GICP_INCLUDE_DIR}.
+# library is not built (it needs fmt), the package includes the headers from SMALL_GICP_INCLUDE_DIR.
 ARG SMALL_GICP_REPO=https://github.com/koide3/small_gicp.git
 ARG SMALL_GICP_COMMIT=fa0cfc983417c044b6036f71dfa448038bb9c820
 RUN git clone "${SMALL_GICP_REPO}" /opt/small_gicp \
     && git -C /opt/small_gicp -c advice.detachedHead=false checkout "${SMALL_GICP_COMMIT}" \
-    && [ "$(git -C /opt/small_gicp rev-parse HEAD)" = "${SMALL_GICP_COMMIT}" ] \
-    && echo "small_gicp ${SMALL_GICP_REPO} $(git -C /opt/small_gicp rev-parse HEAD)" >> /opt/VERSIONS.txt
+    && [ "$(git -C /opt/small_gicp rev-parse HEAD)" = "${SMALL_GICP_COMMIT}" ]
 ENV SMALL_GICP_INCLUDE_DIR=/opt/small_gicp/include
 
-# Build-time check: the VGICP headers compile with OpenMP against the system Eigen, yaml-cpp is found.
+# Pins, for the README.
+RUN { echo "small_gicp ${SMALL_GICP_REPO} $(git -C /opt/small_gicp rev-parse HEAD)"; \
+      echo "evo $(pip3 show evo | sed -n 's/^Version: //p')"; \
+      dpkg-query -W -f '${Package} ${Version}\n' libpcl-dev libeigen3-dev libgeographic-dev libyaml-cpp-dev \
+          libgtest-dev ros-humble-pcl-conversions ros-humble-tf2-eigen python3-numpy python3-matplotlib; \
+    } > /opt/VERSIONS.txt
+
+# Build-time checks: CMake finds every dependency of the two packages; the VGICP headers compile with OpenMP;
+# numpy and matplotlib are still apt's; evo runs; the mcap plugin is there.
 # point_cloud.hpp comes first: incremental_voxelmap.hpp uses std::shared_ptr without including <memory> itself.
-RUN printf '%s\n' '#include <small_gicp/points/point_cloud.hpp>' \
+RUN source /opt/ros/humble/setup.bash \
+    && mkdir -p /tmp/chk && printf '%s\n' 'cmake_minimum_required(VERSION 3.16)' 'project(chk CXX)' \
+        'find_package(Eigen3 3.4 REQUIRED NO_MODULE)' 'find_package(OpenMP REQUIRED)' \
+        'find_package(PCL REQUIRED COMPONENTS common io)' 'find_package(yaml-cpp REQUIRED)' \
+        'find_package(GTest REQUIRED)' 'find_package(pcl_conversions REQUIRED)' 'find_package(tf2_eigen REQUIRED)' \
+        'find_package(tf2_ros REQUIRED)' 'find_package(rosbag2_cpp REQUIRED)' \
+        'list(APPEND CMAKE_MODULE_PATH /usr/share/cmake/geographiclib)' 'find_package(GeographicLib REQUIRED)' \
+        'message(STATUS "found Eigen3 ${EIGEN3_VERSION_STRING} PCL ${PCL_VERSION} OpenMP ${OpenMP_CXX_VERSION} GeographicLib ${GeographicLib_LIBRARIES}")' \
+        > /tmp/chk/CMakeLists.txt \
+    && cmake -S /tmp/chk -B /tmp/chk/build | grep 'found Eigen3' && rm -rf /tmp/chk \
+    && printf '%s\n' '#include <small_gicp/points/point_cloud.hpp>' \
         '#include <small_gicp/registration/registration.hpp>' \
         '#include <small_gicp/factors/gicp_factor.hpp>' \
         '#include <small_gicp/registration/reduction_omp.hpp>' \
         '#include <small_gicp/ann/gaussian_voxelmap.hpp>' \
-        '#include <yaml-cpp/yaml.h>' \
         'int main() { small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP> r;' \
-        '  small_gicp::GaussianVoxelMap m(1.0); YAML::Node n = YAML::Load("a: 1");' \
-        '  return (r.optimizer.max_iterations == 20 && n["a"].as<int>() == 1) ? 0 : 1; }' > /tmp/chk.cpp \
-    && g++ -std=c++17 -fopenmp -I${SMALL_GICP_INCLUDE_DIR} -I/usr/include/eigen3 /tmp/chk.cpp -o /tmp/chk -lyaml-cpp \
-    && /tmp/chk && echo 'small_gicp OK' && rm -f /tmp/chk /tmp/chk.cpp && tail -1 /opt/VERSIONS.txt
+        '  small_gicp::GaussianVoxelMap m(1.0); return r.optimizer.max_iterations == 20 ? 0 : 1; }' > /tmp/chk.cpp \
+    && g++ -std=c++17 -fopenmp -I${SMALL_GICP_INCLUDE_DIR} -I/usr/include/eigen3 /tmp/chk.cpp -o /tmp/chk \
+    && /tmp/chk && echo 'small_gicp OK' && rm -f /tmp/chk /tmp/chk.cpp \
+    && python3 -c "import numpy, matplotlib, scipy; assert numpy.__version__ == '1.21.5', numpy.__version__; \
+        assert matplotlib.__file__.startswith('/usr/lib/python3/'), matplotlib.__file__; print('numpy/matplotlib from apt OK')" \
+    && evo_ape --help > /dev/null && echo 'evo OK' \
+    && ros2 bag record --help | grep -q -E -- '--storage \{[^}]*mcap' && echo 'mcap OK' \
+    && cat /opt/VERSIONS.txt
+
+# Entry point sources Humble and the repo's install/ if it exists. `docker compose exec loc bash` skips the entry
+# point, hence the bashrc line.
+COPY docker/loc_entrypoint.sh /loc_entrypoint.sh
+RUN chmod 755 /loc_entrypoint.sh \
+    && echo 'if [ -f /ws/src/brightdrive_localization/install/setup.bash ]; then source /ws/src/brightdrive_localization/install/setup.bash; fi' \
+         >> /etc/bash.bashrc
+ENTRYPOINT ["/loc_entrypoint.sh"]
+CMD ["bash"]

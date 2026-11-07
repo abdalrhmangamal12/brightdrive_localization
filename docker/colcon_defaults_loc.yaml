@@ -1,0 +1,11 @@
+# colcon in the loc container (COLCON_DEFAULTS_FILE in compose.yaml): eskf/ (plain CMake package, its GTest suite
+# runs with `colcon test`) and localization/ (brightdrive_localization, which also builds eskf through
+# add_subdirectory). The mapping container has its own file, docker/colcon_defaults.yaml.
+# build/ install/ log/ go to the repo root (gitignored), shared with the mapping container; the package folders
+# differ, so the two do not overwrite each other.
+build:
+  base-paths: [eskf, localization]
+  symlink-install: true
+  cmake-args: [-DCMAKE_BUILD_TYPE=RelWithDebInfo, -DCMAKE_EXPORT_COMPILE_COMMANDS=ON]
+test:
+  base-paths: [eskf, localization]
