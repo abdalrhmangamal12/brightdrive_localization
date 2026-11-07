@@ -13,7 +13,24 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <!-- exec_depend on fast_lio once the launch files use it; gtsam, pcl_ros etc. with the first target. -->
+  <!-- mapping_core (no ROS) -->
+  <depend>eigen</depend>
+  <depend>gtsam</depend>
+  <depend>libpcl-all-dev</depend>
+
+  <!-- backend_node -->
+  <depend>rclcpp</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_ros</depend>
+  <depend>pcl_conversions</depend>
+
+  <!-- launch/backend_replay.launch.py -->
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

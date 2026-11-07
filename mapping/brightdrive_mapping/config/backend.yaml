@@ -1,0 +1,68 @@
+# Mapping backend (backend_node). Design: ../README.md. Every noise value is a SIGMA (not a variance), in GTSAM
+# Pose3 order: rot x, y, z [rad] then trans x, y, z [m]. Validated once in the Backend constructor: a value
+# missing or <= 0 fails at startup instead of silently.
+
+/**:
+  ros__parameters:
+    # ---- node only: topics, TF, threads (not part of BackendConfig) ---------------------------------------
+    odom_topic: /Odometry                    # nav_msgs/Odometry, IMU body pose in the front-end's odometry frame
+    cloud_topic: /cloud_registered_body      # sensor_msgs/PointCloud2, deskewed scan in the IMU body frame, same stamp
+    gnss_topic: /gnss/fix                    # sensor_msgs/NavSatFix (raw, never gated: mapping wants every fix)
+    path_topic: /mapping/path                # nav_msgs/Path of the keyframes in map_frame, after every keyframe
+    map_topic: /mapping/global_map           # sensor_msgs/PointCloud2 in map_frame, built only while subscribed
+    save_service: /mapping/save_map          # std_srvs/Trigger; the same writer runs on shutdown
+    publish_tf: true                         # map_frame -> origin_frame on every odometry message, once aligned
+    loop_frequency: 1.0                      # Hz, how often the loop thread tries the latest keyframe
+    map_period: 5.0                          # s, between two /mapping/global_map builds
+    save_dir: /maps                          # MAPS_DIR in compose.yaml
+    # Not here: source_bag, frontend_commit, backend_commit. They are provenance for map.yaml, change every
+    # run, and are passed by the launch file (default: empty).
+
+    # ---- BackendConfig ----------------------------------------------------------------------------------
+    # GNSS antenna in the IMU frame [m] (sim/config/sensors.yaml: gnss.xyz, IMU = base_link at the origin).
+    gnss_lever_arm: [0.0, 0.0, 1.8]
+
+    # Keyframes: a scan becomes a keyframe after this much motion since the last one.
+    kf_dist: 1.0                             # m
+    kf_angle: 0.2                            # rad
+    kf_leaf: 0.2                             # m, voxel size of the cloud stored per keyframe
+    # Range crop before the voxel filter. 3 m drops the car's own returns (sensors.yaml lidar blind); 100 m is
+    # the sensor range.
+    min_range: 3.0                           # m
+    max_range: 100.0                         # m
+
+    # Prior on X(0): pins the graph frame onto the odometry frame.
+    prior_sigma: [1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3]
+    # Odometry factor between consecutive keyframes: 0.06 deg / 1 cm, the LIO-SAM values as sigmas.
+    odom_sigma: [1.0e-3, 1.0e-3, 1.0e-3, 0.01, 0.01, 0.01]
+    # Prior on T_mo (G(0)). Roll and pitch about 2 deg: FAST-LIO's frame is the IMU at start, not gravity
+    # aligned, so they are the car's start attitude. Yaw and position loose: the GNSS factors set them.
+    origin_sigma: [0.035, 0.035, 1.0, 10.0, 10.0, 10.0]
+
+    # GNSS factors.
+    gnss_enable: true
+    align_distance: 30.0                     # m of keyframe path before the 4-DoF fit of T_mo
+    max_time_shift: 0.2                      # s, a fix farther than this from every keyframe is dropped
+    gnss_huber_k: 1.345                      # Huber threshold in sigmas (95 % efficiency on Gaussian noise)
+    gnss_default_sigma: 0.3                  # m, used when a NavSatFix carries no covariance
+
+    # Loop closure. Candidate: nearest keyframe within loop_radius, at least loop_time_diff older.
+    # ICP target: candidate +- loop_search_num keyframes at loop_icp_leaf. Accept if fitness (mean squared point
+    # distance, m^2) < loop_fitness: 0.3 is the LIO-SAM outdoor value.
+    loop_enable: true
+    loop_radius: 10.0                        # m
+    loop_time_diff: 30.0                     # s
+    loop_search_num: 15
+    loop_icp_leaf: 0.4                       # m
+    loop_fitness: 0.3                        # m^2
+    # Loop factor sigma from the ICP fitness: variance = fitness x scale, sigma = sqrt(fitness x scale).
+    # rot scale turns m^2 into rad^2 (fitness 0.1 -> 0.9 deg), trans scale into m^2 (fitness 0.1 -> 0.16 m).
+    loop_rot_scale: 0.0025
+    loop_trans_scale: 0.25
+
+    # Frames and output. map_frame is the georeferenced frame of map.pcd; origin_frame is the front-end's fixed
+    # frame (fastlio_carla.yaml frames.map_frame). The TF the node publishes is map_frame -> origin_frame.
+    map_frame: map
+    origin_frame: fastlio_origin
+    map_name: town03                         # <save_dir>/<map_name>.pcd
+    save_resolution: 0.2                     # m, voxel size of the saved map
