@@ -345,6 +345,18 @@ The rest of the file: `source` (bag, front-end and backend commits at launch tim
 accepted and rejected) and `gnss` (lever arm, factors, dropped, per-axis residual RMS of the final solve,
 alignment time). `T_map_origin` keeps full precision; the other numbers are rounded for reading.
 
+## How the map is made
+
+```
+docker compose up -d mapping && docker compose exec mapping bash       # host: the container has FAST-LIO, GTSAM, DUFOMap
+colcon build && source install/setup.bash                              # container: this package
+ros2 launch brightdrive_mapping backend_replay.launch.py bag:=/bags/fastlio_run_20261105_133549 save_dir:=/maps/run4 save_keyframes:=true run_dynamic_filter:=true
+```
+
+One launch does the rest: backend + bag replay, `save_map` when the bag ends, DUFOMap over the saved keyframes.
+`/maps/run4` then holds `town03.pcd` + `map.yaml` (the contract) and `town03_static.pcd` + `town03_static.yaml`,
+with the trajectories and `loops.txt`. A raw CARLA bag needs FAST-LIO live first ("Full pipeline" below).
+
 ## How to run
 
 Inside the `mapping` container (`docker compose up -d mapping && docker compose exec mapping bash`, repo mounted
@@ -359,13 +371,16 @@ Replay of a recorded FAST-LIO run (the results below):
 
 ```
 ros2 launch brightdrive_mapping backend_replay.launch.py [bag:=/bags/fastlio_run_20261105_133549] [rate:=2] [save_dir:=/maps]
-                                                         [save_keyframes:=true] [loop_enable:=false]
+                                     [save_keyframes:=true] [loop_enable:=false] [run_dynamic_filter:=true]
 ```
 
-The launch starts the node, plays the bag 3 s later at `rate` (the run bags were recorded at half speed and have
-no `/clock`, so rate 2 is real time), and shuts down 5 s after the bag ends, which saves the map. It also passes
-the bag path and the two git commits for `map.yaml`; `save_keyframes` and `loop_enable` override the YAML for one
-run (the per-keyframe PCDs for the dynamic-object filter, and the no-loop row of the table below). `ros2 service call /mapping/save_map std_srvs/srv/Trigger`
+The launch starts the node and plays the bag 3 s later at `rate` (the run bags were recorded at half speed and
+have no `/clock`, so rate 2 is real time). When the bag ends it waits 5 s for the queued scans, calls
+`/mapping/save_map` through `scripts/save_map.py` (exit 0 only when the backend reports success), with
+`run_dynamic_filter:=true` runs `scripts/dynamic_filter.py` on `save_dir`, and shuts down; the node skips its own
+shutdown save when nothing arrived after the service save. The launch also passes the bag path and the two git
+commits for `map.yaml`; `save_keyframes` and `loop_enable` override the YAML for one run (the per-keyframe PCDs
+for the dynamic-object filter, and the no-loop row of the table below). `ros2 run brightdrive_mapping save_map.py`
 saves mid-run without stopping.
 
 Full pipeline, FAST-LIO live on a raw CARLA bag (`/points_raw`, `/imu/data`, `/gnss/fix`, `/clock`), three
@@ -444,9 +459,13 @@ format); `scripts/dynamic_filter.py` runs DUFOMap with the published settings of
 a top-down picture.
 
 ```
-ros2 launch brightdrive_mapping backend_replay.launch.py save_keyframes:=true                  # container, /maps/keyframes
-pip install dufomap && mapping/brightdrive_mapping/scripts/dynamic_filter.py /var/tmp/brightdrive_maps   # host
+ros2 launch brightdrive_mapping backend_replay.launch.py save_keyframes:=true run_dynamic_filter:=true   # both steps
+ros2 run brightdrive_mapping dynamic_filter.py /maps                                                    # the filter alone
 ```
+
+The filter takes the mapping output folder and nothing else: `map.yaml` there gives the map's name, frame and
+voxel size, `keyframes/` is the input, and it stops with "re-run mapping with `save_keyframes:=true`" when that
+folder is missing. The container has `dufomap` (Dockerfile); on a host it is `pip install dufomap`.
 
 On the run above (`sim.yaml` `mapping: {laps: 2, traffic: 10}`, ten Traffic-Manager cars near the route), 3 329
 keyframes and 26.3 M points, 78 s to integrate and 10 s to label on 20 threads:

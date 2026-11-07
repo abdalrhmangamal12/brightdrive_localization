@@ -59,6 +59,8 @@ target_link_libraries(backend_node mapping_core)
 ament_target_dependencies(backend_node
   rclcpp nav_msgs sensor_msgs geometry_msgs std_srvs tf2_ros pcl_conversions)
 install(TARGETS backend_node geo_check DESTINATION lib/${PROJECT_NAME})
+# The two Python tools the replay launch runs through `ros2 run`: the save client and the dynamic-object filter.
+install(PROGRAMS scripts/save_map.py scripts/dynamic_filter.py DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME}

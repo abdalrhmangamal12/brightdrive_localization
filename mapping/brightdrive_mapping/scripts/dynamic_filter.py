@@ -1,28 +1,30 @@
 #!/usr/bin/env python3
-"""Remove dynamic objects from the keyframe clouds with DUFOMap and write the static map.
+"""Remove dynamic objects from a mapping run with DUFOMap.
 
-Input: <save_dir>/keyframes/NNNNNN.pcd, written by the backend with save_keyframes: every keyframe in the map
-frame with the sensor pose in the VIEWPOINT line (the DUFOMap / DynamicMap_Benchmark unified format). DUFOMap
-casts the rays of every frame from its viewpoint and marks the cells they pass through as seen-free; a point whose
-cell was seen free at another time is dynamic ("DUFOMap: Efficient Dynamic Awareness Mapping", Duberg, Zhang, Jia,
-Jensfelt, RA-L 2024). The parameters are the ones DUFOMap's own main.py uses (resolution 0.1 m, d_s 0.2 m, d_p 2)
-and nothing is tuned here; the keyframe clouds are already range-cropped by the backend, so main.py's 50 m cut is
-not repeated.
+  ros2 run brightdrive_mapping dynamic_filter.py <save_dir>      # e.g. /maps; or run_dynamic_filter:=true in the launch
 
-Output in <save_dir>: <map>_static.pcd (the points labelled static, voxelised like the backend's map),
-<map>_static.yaml (the map.yaml of the static map: the backend's file with map.pcd pointing at the static file
-and a dynamic_filter block), <map>_dynamic.pcd (what was removed), <map>_dynamic_bev.png (top-down, removed
-points in red), and the counts.
+The one argument is the mapping output folder. map.yaml there gives the map's name (map.pcd), frame and voxel
+size; keyframes/NNNNNN.pcd (written with save_keyframes:=true) is the input: every keyframe in the map frame with
+the sensor pose in the VIEWPOINT line (the DUFOMap / DynamicMap_Benchmark unified format). DUFOMap casts the rays
+of every frame from its viewpoint and marks the cells they pass through as seen-free; a point whose cell was seen
+free at another time is dynamic ("DUFOMap: Efficient Dynamic Awareness Mapping", Duberg, Zhang, Jia, Jensfelt,
+RA-L 2024). The parameters are the ones DUFOMap's own main.py uses (resolution 0.1 m, d_s 0.2 m, d_p 2) and
+nothing is tuned here; the keyframe clouds are already range-cropped by the backend, so main.py's 50 m cut is not
+repeated.
 
-  pip install dufomap                       # host python; the mapping container has no dufomap
-  mapping/brightdrive_mapping/scripts/dynamic_filter.py <save_dir> [--map-name town03] [--voxel 0.2] [--threads 0] [--no-image]
+Output, next to map.yaml: <name>_static.pcd (the points labelled static, voxelised like the backend's map),
+<name>_static.yaml (map.yaml with map.pcd pointing at the static file plus a dynamic_filter block),
+<name>_dynamic.pcd (what was removed), <name>_dynamic_bev.png (top-down, removed points in red), and the counts.
+The mapping container has dufomap (docker/Dockerfile); on a host it is `pip install dufomap`.
 """
 import argparse
 import glob
 import os
+import tempfile
 import time
 
 import numpy as np
+import yaml
 from dufomap import dufomap
 
 # DUFOMap main.py: dufomap(0.1, 0.2, 2) "resolution, d_s, d_p same with paper".
@@ -123,7 +125,13 @@ def voxel_centroids(xyzi, voxel):
 
 
 def bev_image(path, static, dynamic):
-    import matplotlib
+    """Top-down picture; False when matplotlib is not installed (the maps and the yaml do not depend on it)."""
+    os.environ.setdefault('MPLCONFIGDIR', tempfile.mkdtemp(prefix='mpl-'))  # the container's HOME is not writable
+    try:
+        import matplotlib
+    except ImportError:
+        print(f'matplotlib not installed: no {path}')
+        return False
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     cell = 0.5
@@ -141,20 +149,46 @@ def bev_image(path, static, dynamic):
     ax.legend(loc='upper right', markerscale=20)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
+    return True
+
+
+def read_map_yaml(save_dir):
+    """(name, frame, georeferenced, voxel) from <save_dir>/map.yaml, with clear messages when it is not there."""
+    path = os.path.join(save_dir, 'map.yaml')
+    if not os.path.isfile(path):
+        raise SystemExit(f'{path} not found: {save_dir} is not a mapping output folder')
+    with open(path) as f:
+        desc = yaml.safe_load(f)
+    try:
+        m = desc['map']
+        pcd, frame, georeferenced, voxel = m['pcd'], m['frame'], bool(m['georeferenced']), float(m['resolution_m'])
+    except (KeyError, TypeError):
+        raise SystemExit(f'{path}: no map block with pcd, frame, georeferenced, resolution_m '
+                         f'(the file predates the map.yaml contract; re-run mapping)')
+    name = pcd[:-4] if pcd.endswith('.pcd') else pcd
+    return name, frame, georeferenced, voxel
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('save_dir')
-    ap.add_argument('--map-name', default='town03')
-    ap.add_argument('--voxel', type=float, default=0.2, help='cell size of the written maps [m], as the backend')
+    ap = argparse.ArgumentParser(
+        usage='ros2 run brightdrive_mapping dynamic_filter.py <save_dir>',
+        description='Remove dynamic objects from a mapping run: DUFOMap over <save_dir>/keyframes/, '
+                    '<name>_static.pcd and <name>_static.yaml next to map.yaml. '
+                    'Everything else (map name, frame, voxel size) comes from <save_dir>/map.yaml.')
+    ap.add_argument('save_dir', help='the mapping output folder (save_dir of the backend), e.g. /maps')
     ap.add_argument('--threads', type=int, default=0, help='DUFOMap threads, 0 = all')
-    ap.add_argument('--no-image', action='store_true')
+    ap.add_argument('--no-image', action='store_true', help='skip <name>_dynamic_bev.png')
     args = ap.parse_args()
-
-    files = sorted(glob.glob(os.path.join(args.save_dir, 'keyframes', '*.pcd')))
+    save_dir = os.path.abspath(args.save_dir)
+    name, frame, georeferenced, voxel = read_map_yaml(save_dir)
+    kf_dir = os.path.join(save_dir, 'keyframes')
+    files = sorted(glob.glob(os.path.join(kf_dir, '*.pcd')))
     if not files:
-        raise SystemExit(f'no keyframes in {args.save_dir}/keyframes: run the backend with save_keyframes: true')
+        raise SystemExit(f'{kf_dir} is missing or empty: re-run mapping with save_keyframes:=true')
+    print(f'{save_dir}: map {name}.pcd in frame {frame}'
+          + ('' if georeferenced else ' (NOT georeferenced: the static map will not be either)')
+          + f', voxel {voxel} m, {len(files)} keyframes')
+
     t0 = time.time()
     mymap = dufomap(RESOLUTION_M, D_S_M, D_P, num_threads=args.threads)
     frames = []
@@ -176,28 +210,31 @@ def main():
     dynamic = np.vstack(dynamic) if any(len(d) for d in dynamic) else np.zeros((0, 4), np.float32)
     n_all = len(static) + len(dynamic)
 
-    full_vox = voxel_centroids(np.vstack([static, dynamic]), args.voxel)
-    static_vox = voxel_centroids(static, args.voxel)
-    dynamic_vox = voxel_centroids(dynamic, args.voxel) if len(dynamic) else dynamic
-    static_path = os.path.join(args.save_dir, f'{args.map_name}_static.pcd')
-    dynamic_path = os.path.join(args.save_dir, f'{args.map_name}_dynamic.pcd')
+    full_vox = voxel_centroids(np.vstack([static, dynamic]), voxel)
+    static_vox = voxel_centroids(static, voxel)
+    dynamic_vox = voxel_centroids(dynamic, voxel) if len(dynamic) else dynamic
+    static_path = os.path.join(save_dir, f'{name}_static.pcd')
+    dynamic_path = os.path.join(save_dir, f'{name}_dynamic.pcd')
     write_pcd(static_path, static_vox, 'static map: DUFOMap-labelled static points (brightdrive_mapping/scripts/dynamic_filter.py)')
     if len(dynamic_vox):
         write_pcd(dynamic_path, dynamic_vox, 'points DUFOMap removed as dynamic (brightdrive_mapping/scripts/dynamic_filter.py)')
-    if not args.no_image:
-        bev_image(os.path.join(args.save_dir, f'{args.map_name}_dynamic_bev.png'), static_vox, dynamic_vox)
     removed_fraction = (len(full_vox) - len(static_vox)) / max(1, len(full_vox))
-    yaml_path = write_static_yaml(args.save_dir, args.map_name, removed_fraction, args.voxel)
+    yaml_path = write_static_yaml(save_dir, name, removed_fraction, voxel)
 
     print(f'{len(files)} keyframes, {n_all:,} points; DUFOMap(resolution {RESOLUTION_M}, d_s {D_S_M}, d_p {D_P}) '
           f'integrated in {t_int:.0f} s, labelled in {time.time() - t0 - t_int:.0f} s')
     print(f'removed {len(dynamic):,} points ({100.0 * len(dynamic) / max(1, n_all):.2f} %) '
           f'-> static {len(static):,}')
-    print(f'at {args.voxel} m voxels: full map {len(full_vox):,}, static {len(static_vox):,} '
+    print(f'at {voxel} m voxels: full map {len(full_vox):,}, static {len(static_vox):,} '
           f'({100.0 * (len(full_vox) - len(static_vox)) / max(1, len(full_vox)):.2f} % fewer), '
           f'removed {len(dynamic_vox):,}')
     print(f'wrote {static_path}' + (f', {yaml_path}' if yaml_path else '')
-          + (f', {dynamic_path}' if len(dynamic_vox) else ''))
+          + (f', {dynamic_path}' if len(dynamic_vox) else ''), flush=True)
+    # Last, so a missing matplotlib costs the picture and nothing else.
+    if not args.no_image:
+        image_path = os.path.join(save_dir, f'{name}_dynamic_bev.png')
+        if bev_image(image_path, static_vox, dynamic_vox):
+            print(f'wrote {image_path}')
 
 
 if __name__ == '__main__':

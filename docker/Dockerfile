@@ -89,7 +89,7 @@ FROM base AS mapping
 #
 # FAST-LIO: pcl_ros, pcl_conversions, rclcpp_components, std_srvs, visualization_msgs (the rest is in ros-base).
 # Backend: GTSAM, PCL (pcl_ros pulls the full libpcl-dev), GeographicLib (geo: LocalCartesian for WGS-84 fixes),
-# tf2_eigen / tf2_geometry_msgs / tf2_sensor_msgs, GTest.
+# tf2_eigen / tf2_geometry_msgs / tf2_sensor_msgs, GTest; matplotlib for the picture scripts/dynamic_filter.py draws.
 # Both: mcap storage to play the bags, foxglove_bridge to watch a run (port 8765).
 # ros-humble-gtsam 4.2.0 links the system Eigen 3.4.0 and exports no -march=native, so no source build needed.
 # Already in base: build-essential, cmake, git, colcon, python3-dev, libeigen3-dev, ament_cmake_gtest.
@@ -108,6 +108,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgeographic-dev \
         libgtest-dev \
         libgmock-dev \
+        python3-matplotlib \
     && rm -rf /var/lib/apt/lists/*
 
 # FAST-LIO at a fixed commit with its ikd-Tree submodule, untouched. Plain clone, then the commit is checked.
@@ -146,6 +147,10 @@ RUN source /opt/ros/humble/setup.bash && source ${FAST_LIO_WS}/install/setup.bas
     && cmake -S /tmp/chk -B /tmp/chk/build | grep 'found GTSAM' && rm -rf /tmp/chk \
     && ros2 bag record --help | grep -q -E -- '--storage \{[^}]*mcap' && echo 'mcap OK' \
     && cat /opt/VERSIONS.txt
+
+# DUFOMap for scripts/dynamic_filter.py (run_dynamic_filter:=true in the replay launch). The cp310 manylinux wheel
+# needs only numpy, which the system python3-numpy satisfies; nothing else is upgraded.
+RUN pip3 install --no-cache-dir dufomap==1.1.1 && python3 -c 'from dufomap import dufomap'
 
 # Entry point sources Humble, the underlay and the repo's install/ if it exists. `docker compose exec mapping bash`
 # skips the entry point, hence the bashrc lines.

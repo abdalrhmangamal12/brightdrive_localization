@@ -1,12 +1,14 @@
 # The backend on a recorded FAST-LIO run: backend_node plus `ros2 bag play` of a bag that carries /Odometry,
 # /cloud_registered_body and /gnss/fix. When the bag ends the launch waits so the queued scans are processed,
-# then shuts down; the SIGINT makes the node leave spin(), and main() saves the map through stop().
+# calls /mapping/save_map (scripts/save_map.py, exit 0 only on success), with run_dynamic_filter:=true runs
+# scripts/dynamic_filter.py on save_dir, and shuts down. The node's own shutdown save is skipped when nothing
+# arrived after the service save, so the files the filter read are the files that stay.
 #
 #   ros2 launch brightdrive_mapping backend_replay.launch.py [bag:=/bags/<run>] [rate:=2] [save_dir:=/maps]
-#                                                           [save_keyframes:=true] [loop_enable:=false]
+#                               [save_keyframes:=true] [loop_enable:=false] [run_dynamic_filter:=true]
 #
 # save_keyframes and loop_enable override backend.yaml for one run: the per-keyframe PCDs feed the dynamic-object
-# filter, and a run without loop closure is one row of the evaluation table.
+# filter (run_dynamic_filter needs them), and a run without loop closure is one row of the evaluation table.
 #
 # The run bags have no /clock (the recorder stamped wall time), so the node runs on wall time; every header the
 # backend reads is sim time and only those stamps are used for pairing, TF and the trajectory.
@@ -25,11 +27,12 @@ from launch_ros.substitutions import FindPackageShare
 # Seconds between the backend start and the first bag message: the subscriptions must exist before the bag's
 # first /Odometry, or the first scans have no pose to pair with.
 BACKEND_WARMUP_S = 3.0
-# Seconds after `ros2 bag play` exits before the shutdown: scans still queued in the executor get processed
-# and the last GNSS fixes attach to the last keyframe.
+# Seconds after `ros2 bag play` exits before the save: scans still queued in the executor get processed and
+# the last GNSS fixes attach to the last keyframe.
 BAG_END_GRACE_S = 5.0
-# The shutdown SIGINT starts saveMap (batch solve + a map of ~10^7 points). launch escalates to SIGTERM and
-# SIGKILL after these many seconds; the default 5 s would kill the save.
+# If the node still has to save at shutdown (something arrived after the service save), the SIGINT starts a
+# batch solve + a map of ~10^7 points. launch escalates to SIGTERM and SIGKILL after these many seconds; the
+# default 5 s would kill the save.
 SAVE_TIMEOUT_S = '180'
 
 # Where the two code bases live, for the commits map.yaml records. FAST-LIO is the clone the Docker image built
@@ -77,12 +80,42 @@ def generate_launch_description():
         output='screen',
     )
 
-    shutdown_after_bag = RegisterEventHandler(OnProcessExit(
+    save_map = ExecuteProcess(
+        cmd=['ros2', 'run', 'brightdrive_mapping', 'save_map.py'],
+        name='save_map', output='screen',
+    )
+    dynamic_filter = ExecuteProcess(
+        cmd=['ros2', 'run', 'brightdrive_mapping', 'dynamic_filter.py', LaunchConfiguration('save_dir')],
+        name='dynamic_filter', output='screen',
+    )
+
+    def after_save(event, context):
+        if event.returncode != 0:
+            return [LogInfo(msg='save_map failed, shutting down'), Shutdown(reason='save_map failed')]
+        if context.perform_substitution(LaunchConfiguration('run_dynamic_filter')).lower() in ('true', '1'):
+            return [LogInfo(msg='map saved, running the dynamic-object filter'), dynamic_filter]
+        return [LogInfo(msg='map saved, shutting down'), Shutdown(reason='map saved')]
+
+    on_bag_end = RegisterEventHandler(OnProcessExit(
         target_action=play,
         on_exit=[
-            LogInfo(msg=f'bag replay finished, shutting down in {BAG_END_GRACE_S:.0f} s'),
-            TimerAction(period=BAG_END_GRACE_S, actions=[Shutdown(reason='bag replay finished')]),
+            LogInfo(msg=f'bag replay finished, calling save_map in {BAG_END_GRACE_S:.0f} s'),
+            TimerAction(period=BAG_END_GRACE_S, actions=[save_map]),
         ],
+    ))
+    on_saved = RegisterEventHandler(OnProcessExit(target_action=save_map, on_exit=after_save))
+
+    def after_filter(event, context):
+        if event.returncode != 0:
+            return [LogInfo(msg=f'dynamic filter failed (exit {event.returncode}), see its output above'),
+                    Shutdown(reason='dynamic filter failed')]
+        return [LogInfo(msg='dynamic filter finished'), Shutdown(reason='dynamic filter finished')]
+
+    on_filtered = RegisterEventHandler(OnProcessExit(target_action=dynamic_filter, on_exit=after_filter))
+    # The backend dying (bad config, crash) must not leave the bag playing into nothing.
+    on_backend_exit = RegisterEventHandler(OnProcessExit(
+        target_action=backend,
+        on_exit=[Shutdown(reason='backend exited')],
     ))
 
     return LaunchDescription([
@@ -93,7 +126,13 @@ def generate_launch_description():
         DeclareLaunchArgument('save_keyframes', default_value='false',
                               description='also write <save_dir>/keyframes/NNNNNN.pcd per keyframe'),
         DeclareLaunchArgument('loop_enable', default_value='true', description='loop-closure thread on or off'),
+        DeclareLaunchArgument('run_dynamic_filter', default_value='false',
+                              description='after the save, run scripts/dynamic_filter.py on save_dir '
+                                          '(needs save_keyframes:=true)'),
         backend,
         TimerAction(period=BACKEND_WARMUP_S, actions=[play]),
-        shutdown_after_bag,
+        on_bag_end,
+        on_saved,
+        on_filtered,
+        on_backend_exit,
     ])
