@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "brightdrive_localization/deskewer.hpp"
+#include "brightdrive_localization/health_monitor.hpp"
 #include "brightdrive_localization/initializer.hpp"
 #include "brightdrive_localization/params.hpp"
 #include "brightdrive_localization/scan_matcher.hpp"
@@ -86,6 +87,10 @@ class Localizer {
 
   Output output() const;
   Lifecycle lifecycle() const;
+  // [lifecycle 0 wait / 1 init / 2 tracking, health 0 nominal / 1 degraded /
+  //  2 dead reckoning / 3 failed (-1 not tracking), sigma_pos_m, gnss_age_s,
+  //  nis_pose, error_per_inlier, match_age_ms, consecutive_gated, scan_age_s]
+  std::vector<double> healthNumbers() const;
   // Status key-values (diagnostic_msgs/KeyValue), formatted.
   std::vector<std::pair<std::string, std::string>> statusValues() const;
 
@@ -103,7 +108,8 @@ class Localizer {
   void onMatchLocked(const MatchResult& m, double t_ref, SweepReport& rep);
   // The filter goes back to "not initialized": search again.
   void discardFilterLocked(const std::string& why);
-  Health healthLocked() const;
+  void evaluateHealthLocked();
+  bool stateFiniteLocked() const;
   double sigmaPosLocked() const;
 
   LocalizerConfig cfg_;
@@ -113,6 +119,7 @@ class Localizer {
   Matrix6d V_pose_;
   Deskewer deskewer_;
   Initializer initializer_;
+  HealthMonitor health_;
 
   mutable std::mutex mtx_;
   std::condition_variable imu_cv_;  // notified after every IMU sample
@@ -138,11 +145,13 @@ class Localizer {
   double initialpose_t_ = 0.0;
   double initialpose_yaw_ = 0.0;
 
+  // Health, evaluated after every IMU step while tracking.
+  Health health_now_ = Health::kNominal;
+  long failures_ = 0;
+  bool recovering_ = false;  // initializing again after a FAILED
+  std::string last_fail_reason_ = "-";
+
   // Status.
-  bool have_lidar_accept_ = false;
-  double last_lidar_accept_t_ = 0.0;  // t_ref of the last accepted match
-  bool have_gnss_accept_ = false;
-  double last_gnss_accept_t_ = 0.0;
   double last_nis_pose_ = 0.0;
   double last_nis_gnss_ = 0.0;
   double nis_pose_sum_ = 0.0;
@@ -151,7 +160,6 @@ class Localizer {
   double last_inlier_ratio_ = 0.0;
   double last_match_ms_ = 0.0;
   double last_age_ms_ = 0.0;
-  int consecutive_gated_ = 0;
   long sweeps_skipped_no_imu_ = 0;
   long sweeps_skipped_no_pose_ = 0;
   long init_searches_ = 0;

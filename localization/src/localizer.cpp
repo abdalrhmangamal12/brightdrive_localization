@@ -56,6 +56,7 @@ Localizer::Localizer(const LocalizerConfig& cfg)
       V_pose_(Matrix6d::Zero()),
       deskewer_(T_imu_lidar_),
       initializer_(cfg.init, cfg.accept, cfg.eskf.lever_arm, T_imu_lidar_),
+      health_(cfg.health),
       eskf_(cfg.eskf),
       history_(cfg.history.keep_s) {
   const double sp = cfg.meas.sigma_pos_m * cfg.meas.sigma_pos_m;
@@ -89,6 +90,7 @@ void Localizer::onImu(const eskf::ImuSample& s_in) {
     if (filter_active_) {
       predictLocked(s);
       releaseHeldGnssLocked();
+      if (lifecycle_ == Lifecycle::kTracking) evaluateHealthLocked();
     }
   }
   imu_cv_.notify_all();
@@ -169,14 +171,18 @@ void Localizer::applyGnssLocked(const eskf::GnssMeas& z) {
   const Eigen::Isometry3d before = mapImuLocked();
   const eskf::UpdateResult r = eskf_.correctGnss(zz);
   last_nis_gnss_ = r.d2;
+  UpdateRecord rec;
+  rec.t = eskf_.time();
+  rec.source = UpdateRecord::Source::kGnss;
   if (r.accepted) {
     history_.patchFrom(z.t, mapImuLocked() * before.inverse());
-    have_gnss_accept_ = true;
-    last_gnss_accept_t_ = z.t;
+    rec.outcome = UpdateRecord::Outcome::kAccepted;
     ++gnss_accepted_;
   } else {
+    rec.outcome = UpdateRecord::Outcome::kGated;
     ++gnss_gated_;
   }
+  health_.onUpdate(rec);
 }
 
 void Localizer::releaseHeldGnssLocked() {
@@ -263,6 +269,8 @@ SweepReport Localizer::trackSweep(Scan scan, const ScanMatcher& matcher) {
       if (confirm_count_ >= cfg_.init.confirm_n) {
         confirming_ = false;
         lifecycle_ = Lifecycle::kTracking;
+        recovering_ = false;
+        health_now_ = Health::kNominal;
         init_state_ = "done";
         if (time_to_tracking_s_ < 0.0 && have_init_start_t_) {
           time_to_tracking_s_ = eskf_.time() - init_start_t_;
@@ -346,14 +354,20 @@ void Localizer::onMatchLocked(const MatchResult& m, double t_ref,
       // pose from t_ref on gets the same jump, so the next sweep (older than
       // this correction) is forwarded through motion that contains it.
       history_.patchFrom(t_ref, mapImuLocked() * T_now.inverse());
-      have_lidar_accept_ = true;
-      last_lidar_accept_t_ = t_ref;
-      consecutive_gated_ = 0;
     } else {
       code = Reject::kGated;
-      ++consecutive_gated_;
     }
   }
+  // Health: accepted and gated matches count; quality rejects only let the
+  // LiDAR timeout run.
+  UpdateRecord rec;
+  rec.t = eskf_.time();
+  rec.source = UpdateRecord::Source::kLidar;
+  rec.outcome = code == Reject::kNone ? UpdateRecord::Outcome::kAccepted
+                : code == Reject::kGated
+                    ? UpdateRecord::Outcome::kGated
+                    : UpdateRecord::Outcome::kQualityReject;
+  health_.onUpdate(rec);
   rep.reject = code;
   ++reject_counts_[static_cast<size_t>(code)];
 }
@@ -426,6 +440,7 @@ SweepReport Localizer::initSweep(Scan scan, const ScanMatcher& matcher) {
 
   const eskf::NominalState x0 = initializer_.x0(r, still, b_g_prev_);
   eskf_.initialize(x0, initializer_.P0(still), t_scan);
+  health_.reset(t_scan);
   history_.clearPoses();
   history_.pushPose(t_scan, x0);
   T_odom_base_ = mapBaseLocked();  // odom starts on map
@@ -457,22 +472,25 @@ double Localizer::sigmaPosLocked() const {
                    3.0);
 }
 
-// Provisional: the timeout rules of the health FSM, without FAILED.
-Health Localizer::healthLocked() const {
-  const double t = eskf_.time();
-  const auto& h = cfg_.health;
-  const bool lidar =
-      have_lidar_accept_ && t - last_lidar_accept_t_ <= h.scan_timeout_s;
-  const bool gnss =
-      have_gnss_accept_ && t - last_gnss_accept_t_ <= h.gnss_timeout_s;
-  if (lidar && gnss && sigmaPosLocked() < h.degraded_sigma_m) {
-    return Health::kNominal;
+bool Localizer::stateFiniteLocked() const {
+  const eskf::NominalState& x = eskf_.state();
+  return x.p.allFinite() && x.v.allFinite() && x.q.coeffs().allFinite() &&
+         x.b_a.allFinite() && x.b_g.allFinite() &&
+         eskf_.covariance().allFinite();
+}
+
+// FAILED sends the localizer back to initialization (warm: the still window
+// decides sigma_v, the last b_g is kept).
+void Localizer::evaluateHealthLocked() {
+  const HealthEval e =
+      health_.evaluate(eskf_.time(), sigmaPosLocked(), stateFiniteLocked());
+  health_now_ = e.health;
+  if (e.health == Health::kFailed) {
+    ++failures_;
+    last_fail_reason_ = e.fail_reason;
+    recovering_ = true;
+    discardFilterLocked("health FAILED: " + e.fail_reason);
   }
-  if (lidar || gnss) return Health::kDegraded;
-  double last = -std::numeric_limits<double>::infinity();
-  if (have_lidar_accept_) last = std::max(last, last_lidar_accept_t_);
-  if (have_gnss_accept_) last = std::max(last, last_gnss_accept_t_);
-  return t - last > h.dr_timeout_s ? Health::kDeadReckoning : Health::kDegraded;
 }
 
 Output Localizer::output() const {
@@ -482,7 +500,7 @@ Output Localizer::output() const {
   o.valid = lifecycle_ == Lifecycle::kTracking;
   if (!o.valid) return o;
   o.t = eskf_.time();
-  o.health = healthLocked();
+  o.health = health_now_;
   const eskf::NominalState& x = eskf_.state();
   const eskf::Matrix15d& P = eskf_.covariance();
   const Eigen::Matrix3d R = x.q.normalized().toRotationMatrix();
@@ -532,7 +550,10 @@ std::vector<std::pair<std::string, std::string>> Localizer::statusValues()
   const bool tracking = lifecycle_ == Lifecycle::kTracking;
   const double t = eskf_.time();
   kv.emplace_back("lifecycle", toString(lifecycle_));
-  kv.emplace_back("health", tracking ? toString(healthLocked()) : "-");
+  kv.emplace_back("health", tracking ? toString(health_now_) : "-");
+  kv.emplace_back("failures", std::to_string(failures_));
+  kv.emplace_back("last_fail_reason", last_fail_reason_);
+  kv.emplace_back("recovering_from_failure", recovering_ ? "yes" : "no");
   kv.emplace_back("init", init_state_);
   kv.emplace_back("init_last_search", init_last_result_);
   kv.emplace_back("init_searches", std::to_string(init_searches_));
@@ -551,13 +572,12 @@ std::vector<std::pair<std::string, std::string>> Localizer::statusValues()
   kv.emplace_back("inlier_ratio", fmt("%.3f", last_inlier_ratio_));
   kv.emplace_back("match_time_ms", fmt("%.1f", last_match_ms_));
   kv.emplace_back("match_age_ms", fmt("%.1f", last_age_ms_));
-  kv.emplace_back("gnss_age_s", tracking && have_gnss_accept_
-                                    ? fmt("%.2f", t - last_gnss_accept_t_)
-                                    : "-");
-  kv.emplace_back("scan_age_s", tracking && have_lidar_accept_
-                                    ? fmt("%.2f", t - last_lidar_accept_t_)
-                                    : "-");
-  kv.emplace_back("consecutive_gated", std::to_string(consecutive_gated_));
+  kv.emplace_back("gnss_age_s",
+                  filter_active_ ? fmt("%.2f", health_.gnssAge(t)) : "-");
+  kv.emplace_back("scan_age_s",
+                  filter_active_ ? fmt("%.2f", health_.lidarAge(t)) : "-");
+  kv.emplace_back("consecutive_gated",
+                  std::to_string(health_.consecutiveGated()));
   kv.emplace_back("sigma_pos_m",
                   tracking ? fmt("%.3f", sigmaPosLocked()) : "-");
   kv.emplace_back("sigma_yaw_deg",
@@ -585,6 +605,22 @@ std::vector<std::pair<std::string, std::string>> Localizer::statusValues()
                             fmt(" at t %.2f s", initialpose_t_)
                       : "-");
   return kv;
+}
+
+std::vector<double> Localizer::healthNumbers() const {
+  std::lock_guard<std::mutex> lk(mtx_);
+  const double t = eskf_.time();
+  const bool tracking = lifecycle_ == Lifecycle::kTracking;
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  return {static_cast<double>(lifecycle_),
+          tracking ? static_cast<double>(health_now_) : -1.0,
+          filter_active_ ? sigmaPosLocked() : nan,
+          filter_active_ ? health_.gnssAge(t) : nan,
+          last_nis_pose_,
+          last_error_per_inlier_,
+          last_age_ms_,
+          static_cast<double>(health_.consecutiveGated()),
+          filter_active_ ? health_.lidarAge(t) : nan};
 }
 
 }  // namespace brightdrive_localization

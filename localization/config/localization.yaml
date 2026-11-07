@@ -16,6 +16,7 @@
     output_every_n_imu: 2                # 100 Hz IMU -> 50 Hz pose, odometry, TF
     status_rate_hz: 10.0
     debug: true                          # /localization/debug/* topics
+    publish_map: true                    # /localization/map once (1 m voxels, latched) for RViz / Foxglove
 
     # ---- extrinsics (sim/config/sensors.yaml), xyz [m], roll pitch yaw [deg] -----------------------------------
     T_base_imu_xyz: [0.0, 0.0, 0.0]

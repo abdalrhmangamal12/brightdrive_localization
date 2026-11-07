@@ -40,6 +40,7 @@
 #include "brightdrive_localization/ros_conversions.hpp"
 #include "brightdrive_localization/scan_matcher.hpp"
 #include "brightdrive_localization/types.hpp"
+#include "small_gicp/util/downsampling.hpp"
 
 namespace brightdrive_localization {
 
@@ -60,6 +61,7 @@ struct NodeParams {
   int output_every_n_imu = 2;
   double status_rate_hz = 10.0;
   bool debug = false;
+  bool publish_map = true;  // the map once at 1 m voxels, for RViz / Foxglove
 };
 
 // A path pose every this many seconds of data time.
@@ -179,6 +181,19 @@ class LocalizationNode : public rclcpp::Node {
         "/localization/status", out_qos);
     path_pub_ =
         create_publisher<nav_msgs::msg::Path>("/localization/path", out_qos);
+    health_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
+        "/localization/debug/health", rclcpp::QoS(10));
+    if (np_.publish_map) {
+      // Latched: a viewer that connects later still gets it.
+      map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+          "/localization/map", rclcpp::QoS(1).reliable().transient_local());
+      small_gicp::PointCloud cloud(points);
+      const auto down = small_gicp::voxelgrid_sampling(cloud, 1.0);
+      map_pub_->publish(
+          toCloud(*down, Eigen::Isometry3d::Identity(), map_.frame, 0.0));
+      RCLCPP_INFO(get_logger(), "published /localization/map: %zu points",
+                  down->size());
+    }
     if (np_.debug) {
       match_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
           "/localization/debug/match", rclcpp::QoS(50));
@@ -262,6 +277,7 @@ class LocalizationNode : public rclcpp::Node {
     np_.output_every_n_imu = declare_parameter<int>("output_every_n_imu", 2);
     np_.status_rate_hz = declare_parameter<double>("status_rate_hz", 10.0);
     np_.debug = declare_parameter<bool>("debug", false);
+    np_.publish_map = declare_parameter<bool>("publish_map", true);
 
     auto& c = cfg_;
     c.extrinsics.T_base_imu =
@@ -594,6 +610,7 @@ class LocalizationNode : public rclcpp::Node {
     st.hardware_id = "brightdrive_localization";
     std::string health = "-";
     std::string init = "-";
+    std::string recovering = "no";
     for (const auto& [k, v] : loc_->statusValues()) {
       diagnostic_msgs::msg::KeyValue kv;
       kv.key = k;
@@ -601,6 +618,7 @@ class LocalizationNode : public rclcpp::Node {
       st.values.push_back(kv);
       if (k == "health") health = v;
       if (k == "init") init = v;
+      if (k == "recovering_from_failure") recovering = v;
     }
     {
       std::lock_guard<std::mutex> lk(slot_mtx_);
@@ -617,7 +635,8 @@ class LocalizationNode : public rclcpp::Node {
 
     using DS = diagnostic_msgs::msg::DiagnosticStatus;
     if (lc != Lifecycle::kTracking) {
-      st.level = DS::STALE;
+      // Initializing again after a FAILED is an error; a cold start is not.
+      st.level = recovering == "yes" ? DS::ERROR : DS::STALE;
     } else if (health == "NOMINAL") {
       st.level = DS::OK;
     } else if (health == "FAILED") {
@@ -637,6 +656,10 @@ class LocalizationNode : public rclcpp::Node {
     arr.header.stamp = toStamp(t);
     arr.status.push_back(st);
     status_pub_->publish(arr);
+
+    std_msgs::msg::Float64MultiArray h;
+    h.data = loc_->healthNumbers();
+    health_pub_->publish(h);
   }
 
   static void addValue(diagnostic_msgs::msg::DiagnosticStatus& st,
@@ -695,6 +718,8 @@ class LocalizationNode : public rclcpp::Node {
       status_pub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr match_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr health_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr aligned_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr deskewed_pub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_;
