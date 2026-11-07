@@ -132,7 +132,7 @@ class LocalizationNode : public rclcpp::Node {
     c.eskf.sigma_bg = requiredDouble("eskf.sigma_bg");
     c.eskf.lever_arm = requiredVector3("eskf.lever_arm");
     c.eskf.gate = requiredDouble("eskf.gate");
-    c.gate_pose = requiredDouble("eskf.gate_pose");
+    c.eskf.gate_pose = requiredDouble("eskf.gate_pose");
     c.gnss_default_sigma_m = requiredDouble("gnss_default_sigma_m");
 
     c.matcher.map_voxel_m = requiredDouble("matcher.map_voxel_m");
@@ -221,7 +221,7 @@ class LocalizationNode : public rclcpp::Node {
                                                                   : "density",
                 c.eskf.sigma_a, c.eskf.sigma_g, c.eskf.sigma_ba,
                 c.eskf.sigma_bg, toString(c.eskf.lever_arm).c_str(),
-                c.eskf.gate, c.gate_pose, c.gnss_default_sigma_m);
+                c.eskf.gate, c.eskf.gate_pose, c.gnss_default_sigma_m);
     const auto& m = c.matcher;
     RCLCPP_INFO(get_logger(),
                 "matcher: voxels %.2f / %.2f m, source leaf %.2f m, max corr "

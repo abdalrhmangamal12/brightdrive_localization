@@ -30,7 +30,8 @@ void positive(int v, const char* key) {
 void validate(const LocalizerConfig& c) {
   // The filter rejects a missing noise model, sigmas <= 0, gate <= 0.
   eskf::Eskf check(c.eskf);
-  positive(c.gate_pose, "eskf.gate_pose");
+  positive(c.eskf.gate_pose,
+           "eskf.gate_pose");  // the Eskf accepts 0, we do not
   positive(c.gnss_default_sigma_m, "gnss_default_sigma_m");
   if (!std::isfinite(c.extrinsics.imu_time_offset_s)) {
     throw std::invalid_argument(

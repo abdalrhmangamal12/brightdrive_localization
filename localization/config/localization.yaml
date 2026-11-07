@@ -47,11 +47,11 @@
     # ---- scan matcher (small_gicp VGICP) -----------------------------------------------------------------------
     matcher:
       map_voxel_m: 1.0                   # fine voxel map, tracking
-      coarse_voxel_m: 2.5                # coarse voxel map, initializer grid
+      coarse_voxel_m: 5.0                # coarse voxel map, initializer grid (5 m: wider basin than 2.5 m)
       source_leaf_m: 0.5
       max_corr_dist_m: 1.0               # fine
-      coarse_max_corr_dist_m: 2.5        # coarse
-      max_iterations: 20
+      coarse_max_corr_dist_m: 5.0        # coarse; above ~0.87 x voxel it has no effect (centre-voxel lookup)
+      max_iterations: 50                 # 20 converged only 78 % of the 1 m / 5 deg starts, 50 gives 99 %
       num_threads: 4
       cov_neighbors: 10                  # per-point covariance from this many neighbours (map and source)
       min_range_m: 3.0                   # the car's own returns
@@ -62,8 +62,8 @@
       sigma_pos_m: 0.15                  # R floors; tune to NIS mean ~6
       sigma_rot_rad: 0.025
     accept:
-      min_inlier_ratio: 0.6
-      max_error_per_inlier: 1000000000.0 # placeholder until the matcher study gives the distribution
+      min_inlier_ratio: 0.6              # gross check only: aligned sweeps sit near 1.0; watch it in dense traffic
+      max_error_per_inlier: 0.12         # nominal bag: successes <= 0.087, failures >= 0.14 (dimensionless)
       max_jump_m: 3.0                    # match vs prediction, sanity bound
       max_jump_rad: 0.2
       max_age_s: 0.2                     # t_now - t_ref when the match lands

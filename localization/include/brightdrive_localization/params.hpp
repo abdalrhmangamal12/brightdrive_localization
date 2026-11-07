@@ -91,10 +91,7 @@ struct HealthConfig {
 };
 
 struct LocalizerConfig {
-  eskf::Params eskf;  // the Eskf constructor validates these
-  // Chi-square gate of the 6-DoF pose update. Read from eskf.gate_pose; it
-  // moves into eskf::Params when the filter gets correctPose().
-  double gate_pose = 0.0;
+  eskf::Params eskf;  // the Eskf constructor validates these; gate_pose here
   double gnss_default_sigma_m = 0.0;  // when a fix carries no covariance
   ExtrinsicsConfig extrinsics;
   PointsConfig points;

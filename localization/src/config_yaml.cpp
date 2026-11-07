@@ -90,7 +90,7 @@ LocalizerConfig loadLocalizerConfig(const std::string& yaml_path) {
   c.eskf.sigma_bg = r.get<double>("eskf.sigma_bg");
   c.eskf.lever_arm = r.vec3("eskf.lever_arm");
   c.eskf.gate = r.get<double>("eskf.gate");
-  c.gate_pose = r.get<double>("eskf.gate_pose");
+  c.eskf.gate_pose = r.get<double>("eskf.gate_pose");
   c.gnss_default_sigma_m = r.get<double>("gnss_default_sigma_m");
 
   c.matcher.map_voxel_m = r.get<double>("matcher.map_voxel_m");
