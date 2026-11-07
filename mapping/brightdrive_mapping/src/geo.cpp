@@ -30,14 +30,17 @@ void requireWithin(double v, double lo, double hi, const char* what) {
 
 Projection parseProjection(const std::string& name) {
   if (name == "SphericalMercator") return Projection::SphericalMercator;
+  if (name == "LocalCartesian") return Projection::LocalCartesian;
   throw std::invalid_argument("geo: unknown projection '" + name +
-                              "' (known: SphericalMercator)");
+                              "' (known: SphericalMercator, LocalCartesian)");
 }
 
 const char* projectionName(Projection p) {
   switch (p) {
     case Projection::SphericalMercator:
       return "SphericalMercator";
+    case Projection::LocalCartesian:
+      return "LocalCartesian";
   }
   return "?";
 }
@@ -56,10 +59,16 @@ Projector::Projector(Projection type, double origin_lat_deg,
   }
   scale_ = std::cos(origin_lat_deg * kDegToRad);
   merc_y0_ = mercatorY(origin_lat_deg * kDegToRad);
+  local_.Reset(origin_lat_deg, origin_lon_deg, origin_alt_m);
 }
 
 Eigen::Vector3d Projector::llaToMap(double lat_deg, double lon_deg,
                                     double alt_m) const {
+  if (type_ == Projection::LocalCartesian) {
+    Eigen::Vector3d p;
+    local_.Forward(lat_deg, lon_deg, alt_m, p.x(), p.y(), p.z());
+    return p;
+  }
   const double lat = lat_deg * kDegToRad;
   const double lon = lon_deg * kDegToRad;
   const double lon0 = lon0_deg_ * kDegToRad;
@@ -69,6 +78,11 @@ Eigen::Vector3d Projector::llaToMap(double lat_deg, double lon_deg,
 }
 
 Eigen::Vector3d Projector::mapToLla(const Eigen::Vector3d& p) const {
+  if (type_ == Projection::LocalCartesian) {
+    Eigen::Vector3d lla;
+    local_.Reverse(p.x(), p.y(), p.z(), lla.x(), lla.y(), lla.z());
+    return lla;
+  }
   const double kR = scale_ * kEarthRadius;
   const double lon = lon0_deg_ * kDegToRad + p.x() / kR;
   const double lat =

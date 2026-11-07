@@ -19,7 +19,8 @@ from `backend.yaml`, and no class, function or member refers to FAST-LIO. Output
 every odometry message once GNSS alignment exists, `/mapping/path` after every keyframe and `/mapping/global_map`
 every 5 s (both only while subscribed), the `/mapping/save_map` service, and the files in `/maps`.
 
-`mapping_core` (`types.hpp`, `params.hpp`, `geo`, `PoseGraph`, `Backend`) is a static library without ROS;
+`mapping_core` (`types.hpp`, `params.hpp`, `geo`, `PoseGraph`, `Backend`) is a static library without ROS
+(Eigen, GTSAM, PCL, GeographicLib);
 `backend_node.cpp` is the only ROS code. Frames: `map` → `origin_frame` (this backend: georeference and loop
 correction) → the front-end's own frames. GNSS and loop closure are each a YAML switch.
 
@@ -143,8 +144,8 @@ classDiagram
     }
 
     class geo {
-        <<namespace, Eigen only>>
-        +Projection : enum SphericalMercator
+        <<namespace, Eigen + GeographicLib>>
+        +Projection : enum SphericalMercator, LocalCartesian
         +parseProjection(name)$ Projection
         +align4Dof(p_ant_odom : vector~Vector3d~, p_map : vector~Vector3d~)$ Isometry3d
     }
@@ -196,8 +197,8 @@ classDiagram
 for `T_mo`. Prior and odometry are `PriorFactor`/`BetweenFactor<Pose3>` with diagonal sigmas, the loop factor a
 `BetweenFactor<Pose3>` under Cauchy(1.0), the GNSS factor an `ExpressionFactor<Point3>` on
 `T_mo · X_k · lever_arm` under Huber; no custom factor class. ICP, the candidate search, the voxel filter and the
-file writers are file-local functions in `backend.cpp`. `geo` depends on Eigen alone, so a localizer can copy
-`geo.hpp`/`geo.cpp` and rebuild the map's `Projector` from `map.yaml`.
+file writers are file-local functions in `backend.cpp`. `geo` depends on Eigen and GeographicLib alone, so a
+localizer can copy `geo.hpp`/`geo.cpp` and rebuild the map's `Projector` from `map.yaml`.
 
 ## How it works
 
@@ -270,7 +271,7 @@ an unknown projection name stops the node too. The node logs every value it load
 | `max_time_shift` | s | 0.2 | a fix farther than this from every keyframe is dropped |
 | `gnss_huber_k` | sigma | 1.345 | Huber threshold on GNSS residuals |
 | `gnss_default_sigma` | m | 0.3 | used when a NavSatFix carries no covariance |
-| `geo_projection` | | `SphericalMercator` | how lat/lon/alt becomes map xyz; written into `map.yaml` (`map.projection.type`) |
+| `geo_projection` | | `SphericalMercator` | `SphericalMercator` (CARLA bags) or `LocalCartesian` (WGS-84: receivers, Gazebo, Isaac, AWSIM); written into `map.yaml` (`map.projection.type`) |
 | `geo_origin_lat_deg`, `geo_origin_lon_deg` | deg | 0.0, 0.0 | projection origin, Town03's OpenDRIVE `<geoReference>` (`+lat_0=0 +lon_0=0`) |
 | `geo_origin_alt_m` | m | 0.0 | altitude that maps to z = 0 |
 | `loop_enable` | | true | loop-closure thread |
@@ -327,8 +328,17 @@ Town03's OpenDRIVE `<geoReference>` is `+lat_0=0 +lon_0=0`, so k = 1 and the shi
 y = R ln tan(π/4 + lat/2), z = alt. A map saved before GNSS alignment has `georeferenced: false`,
 `frame: <origin_frame>` and `projection: {type: Local}`.
 
+Two projections exist. `SphericalMercator` is for CARLA bags only: CARLA generates its lat/lon with that
+formula, so nothing else reproduces its metres. `LocalCartesian` is for everything that gives real WGS-84
+coordinates (a receiver, Gazebo, Isaac Sim, AWSIM): `GeographicLib::LocalCartesian` at the origin, x east,
+y north, z up (REP-103), exact on the ellipsoid, so the origin should sit inside the mapped area. Both are set
+in `backend.yaml` and copied into the `projection` block, and that block is what makes a map usable by the
+localizer: it rebuilds the same `Projector` from `map.yaml` and projects its own fixes into the map's metres.
 Same idea as Autoware's `map_projector_info.yaml`; real data = LocalCartesian (GeographicLib) at an origin inside
-the area, set in `backend.yaml`; localizer code unchanged.
+the area, set in `backend.yaml`; localizer code unchanged. `tools/geo_check.cpp` checks both without GTest
+(`ros2 run brightdrive_mapping geo_check`): LocalCartesian at 30 N 31 E maps its origin to zero, +0.001° of
+latitude to +110.85 m north and +0.001° of longitude to +96.49 m east, and inverts within 1e-9°; SphericalMercator
+reproduces the fixed formula on three fixes of the run c bag.
 
 The rest of the file: `source` (bag, front-end and backend commits at launch time), `mapping` (`origin_frame`,
 `T_map_origin` as xyz, quaternion and roll/pitch/yaw in degrees, keyframes, path length, map points, loops
@@ -342,6 +352,7 @@ at `/ws/src/brightdrive_localization`, bags at `/bags`, maps at `/maps`):
 
 ```
 colcon build                              # mapping/ only (docker/colcon_defaults.yaml); then source install/setup.bash
+ros2 run brightdrive_mapping geo_check    # the projector checks (LocalCartesian, SphericalMercator); exit 0 = pass
 ```
 
 Replay of a recorded FAST-LIO run (the results below):

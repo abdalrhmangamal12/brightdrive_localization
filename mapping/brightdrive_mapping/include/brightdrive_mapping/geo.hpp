@@ -1,10 +1,11 @@
 // Georeferencing: lat/lon/alt to map metres, and the 4-DoF fit that gives
-// the first T_mo from antenna positions. Self-contained (Eigen only) so a
-// localizer can copy geo.hpp and geo.cpp as they are.
+// the first T_mo from antenna positions. Self-contained (Eigen and
+// GeographicLib only) so a localizer can copy geo.hpp and geo.cpp as they are.
 #pragma once
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <GeographicLib/LocalCartesian.hpp>
 #include <string>
 #include <vector>
 
@@ -24,9 +25,15 @@ enum class Projection {
   // The ground-truth comparison in eval/ validated this against CARLA: GNSS
   // minus GT has no bias beyond the 0.3 m noise.
   SphericalMercator,
+  // Real receivers and the other simulators (Gazebo, Isaac, AWSIM) give
+  // WGS-84 lat/lon. GeographicLib::LocalCartesian at the origin: x east,
+  // y north, z up in metres, the ROS map convention (REP-103). The origin
+  // belongs inside the mapped area.
+  LocalCartesian,
 };
 
-// "SphericalMercator"; throws std::invalid_argument naming any other string.
+// "SphericalMercator" or "LocalCartesian"; throws std::invalid_argument
+// naming any other string.
 Projection parseProjection(const std::string& name);
 const char* projectionName(Projection p);
 
@@ -54,6 +61,8 @@ class Projector {
   // SphericalMercator: k and the origin's Mercator y, fixed at construction.
   double scale_ = 1.0;
   double merc_y0_ = 0.0;
+  // LocalCartesian: WGS-84 ENU at the origin, reset once at construction.
+  GeographicLib::LocalCartesian local_;
 };
 
 // Least-squares T (x, y, z, yaw; roll = pitch = 0) with

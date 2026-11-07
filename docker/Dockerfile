@@ -77,14 +77,16 @@ RUN python3 -c "import carla, numpy; from importlib.metadata import version; \
 
 # ---------------------------------------------------------------------------
 FROM base AS loc
-# TODO estimator deps (loc_ros)
+# TODO estimator deps (loc_ros). libgeographic-dev among them: the localizer copies mapping's geo.hpp/geo.cpp
+# (GeographicLib::LocalCartesian) to rebuild a map's projector from map.yaml.
 
 # ---------------------------------------------------------------------------
 FROM base AS mapping
 # FAST-LIO is built into the image as an underlay; brightdrive_mapping is built from the mounted repo at run time.
 #
 # FAST-LIO: pcl_ros, pcl_conversions, rclcpp_components, std_srvs, visualization_msgs (the rest is in ros-base).
-# Backend: GTSAM, PCL (pcl_ros pulls the full libpcl-dev), tf2_eigen / tf2_geometry_msgs / tf2_sensor_msgs, GTest.
+# Backend: GTSAM, PCL (pcl_ros pulls the full libpcl-dev), GeographicLib (geo: LocalCartesian for WGS-84 fixes),
+# tf2_eigen / tf2_geometry_msgs / tf2_sensor_msgs, GTest.
 # Both: mcap storage to play the bags, foxglove_bridge to watch a run (port 8765).
 # ros-humble-gtsam 4.2.0 links the system Eigen 3.4.0 and exports no -march=native, so no source build needed.
 # Already in base: build-essential, cmake, git, colcon, python3-dev, libeigen3-dev, ament_cmake_gtest.
@@ -100,6 +102,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-tf2-sensor-msgs \
         ros-humble-rosbag2-storage-mcap \
         ros-humble-foxglove-bridge \
+        libgeographic-dev \
         libgtest-dev \
         libgmock-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -123,7 +126,7 @@ RUN cd ${FAST_LIO_WS} && source /opt/ros/humble/setup.bash \
 # Pins, for the README.
 RUN { echo "fast_lio ${FAST_LIO_REPO} $(git -C ${FAST_LIO_WS}/src/fast_lio rev-parse HEAD)"; \
       echo "ikd-Tree https://github.com/hku-mars/ikd-Tree $(git -C ${FAST_LIO_WS}/src/fast_lio/include/ikd-Tree rev-parse HEAD)"; \
-      dpkg-query -W -f '${Package} ${Version}\n' ros-humble-gtsam libpcl-dev libeigen3-dev ros-humble-pcl-ros libgtest-dev; \
+      dpkg-query -W -f '${Package} ${Version}\n' ros-humble-gtsam libpcl-dev libeigen3-dev libgeographic-dev ros-humble-pcl-ros libgtest-dev; \
     } > /opt/VERSIONS.txt
 
 # Build-time checks: package and executable resolve, CMake finds GTSAM / PCL / Eigen, mcap plugin present.
@@ -134,7 +137,8 @@ RUN source /opt/ros/humble/setup.bash && source ${FAST_LIO_WS}/install/setup.bas
     && mkdir -p /tmp/chk && printf '%s\n' 'cmake_minimum_required(VERSION 3.16)' 'project(chk CXX)' \
         'find_package(GTSAM 4.2 REQUIRED)' 'find_package(PCL REQUIRED COMPONENTS common io registration filters)' \
         'find_package(Eigen3 3.4 REQUIRED)' \
-        'message(STATUS "found GTSAM ${GTSAM_VERSION} PCL ${PCL_VERSION} Eigen3 ${EIGEN3_VERSION_STRING}")' \
+        'list(APPEND CMAKE_MODULE_PATH /usr/share/cmake/geographiclib)' 'find_package(GeographicLib REQUIRED)' \
+        'message(STATUS "found GTSAM ${GTSAM_VERSION} PCL ${PCL_VERSION} Eigen3 ${EIGEN3_VERSION_STRING} GeographicLib ${GeographicLib_LIBRARIES}")' \
         > /tmp/chk/CMakeLists.txt \
     && cmake -S /tmp/chk -B /tmp/chk/build | grep 'found GTSAM' && rm -rf /tmp/chk \
     && ros2 bag record --help | grep -q -E -- '--storage \{[^}]*mcap' && echo 'mcap OK' \
