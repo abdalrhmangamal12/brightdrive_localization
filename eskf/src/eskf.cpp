@@ -27,6 +27,10 @@ Eskf::Eskf(const Params& params) : params_(params) {
   require_positive(params_.sigma_ba, "sigma_ba");
   require_positive(params_.sigma_bg, "sigma_bg");
   require_positive(params_.gate, "gate");
+  // gate_pose may stay 0 (no pose updates); correctPose() checks it at use.
+  if (!(params_.gate_pose >= 0.0)) {
+    throw std::invalid_argument("Params::gate_pose must be >= 0");
+  }
 }
 
 void Eskf::initialize(const NominalState& x0, const Matrix15d& P0, double t0) {
@@ -136,6 +140,30 @@ UpdateResult Eskf::correctGnss(const GnssMeas& z) {
   const Eigen::Vector3d r = z.z - (x_.p + R * params_.lever_arm);
   const Eigen::Matrix<double, 3, 15> H = buildHGnss(R, params_.lever_arm);
   return applyCorrection<3>(r, H, z.V, params_.gate);
+}
+
+UpdateResult Eskf::correctPose(const PoseMeas& z) {
+  if (!initialized_) {
+    throw std::logic_error("Eskf::correctPose called before initialize()");
+  }
+  if (!(params_.gate_pose > 0.0)) {
+    throw std::logic_error("correctPose: Params::gate_pose is not set (0)");
+  }
+  if (!(z.q.norm() > 0.0)) {
+    throw std::invalid_argument("correctPose: z.q is zero or NaN");
+  }
+  if (!z.V.allFinite() || !z.V.isApprox(z.V.transpose()) ||
+      Eigen::LLT<Eigen::Matrix<double, 6, 6>>(z.V).info() != Eigen::Success) {
+    throw std::invalid_argument(
+        "correctPose: V must be finite, symmetric, positive definite");
+  }
+  // Innovation (math.md 8.7): position difference in the world frame, and the
+  // rotation that takes the nominal to the measurement, on the right, so it is
+  // the same local error as dtheta.
+  Eigen::Matrix<double, 6, 1> r;
+  r.head<3>() = z.p - x_.p;
+  r.tail<3>() = So3::Log(x_.q.conjugate() * z.q.normalized());
+  return applyCorrection<6>(r, buildHPose(), z.V, params_.gate_pose);
 }
 
 void Eskf::inject(const Vector15d& dx) {

@@ -47,11 +47,23 @@ struct GnssMeas {
   Eigen::Matrix3d V = Eigen::Matrix3d::Zero();
 };
 
-// What correctGnss() reports back. d2 is used by the health monitor.
+// Pose of the IMU in the world frame, e.g. a LiDAR scan match moved to the
+// IMU with the extrinsics. V is 6x6 in the order [position, rotation]: m^2
+// for p, rad^2 for the rotation error on the right (q_meas = q * Exp(e), the
+// same local error as the state). Zero = "not set": correctPose() rejects it.
+struct PoseMeas {
+  double t = 0.0;
+  Eigen::Vector3d p = Eigen::Vector3d::Zero();            // [m]
+  Eigen::Quaterniond q = Eigen::Quaterniond::Identity();  // IMU -> world
+  Eigen::Matrix<double, 6, 6> V = Eigen::Matrix<double, 6, 6>::Zero();
+};
+
+// What correctGnss() and correctPose() report back. d2 is used by the health
+// monitor.
 struct UpdateResult {
   bool accepted = false;
   double d2 = 0.0;
-  Eigen::VectorXd innovation;  // size of the measurement: 3 for GNSS
+  Eigen::VectorXd innovation;  // size of the measurement: 3 GNSS, 6 pose
 };
 
 }  // namespace eskf

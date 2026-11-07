@@ -35,5 +35,10 @@ struct Params {
 
   // Chi-square gate on the GNSS innovation (3 DOF, 99 %).
   double gate = 11.34;
+
+  // Chi-square gate on the pose innovation (6 DOF): 16.81 = 99 %,
+  // 22.46 = 99.9 %. No default on purpose: 0 = not set, and correctPose()
+  // throws until the config chooses one; a GNSS-only filter never needs it.
+  double gate_pose = 0.0;
 };
 }  // namespace eskf

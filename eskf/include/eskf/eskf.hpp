@@ -1,18 +1,19 @@
-// The filter: IMU predict, GNSS correct. Math: docs/math.md sections 5-9.
+// The filter: IMU predict, GNSS and pose correct. Math: docs/math.md
+// sections 5-9.
 #pragma once
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
 #include "eskf/params.hpp"  // Params (sigmas, g, gate, noise_model)
-#include "eskf/types.hpp"   // NominalState, ImuSample, GnssMeas, UpdateResult
+#include "eskf/types.hpp"   // state, IMU, GNSS, pose, UpdateResult
 
 namespace eskf {
 
 class Eskf {
  public:
   // Throws std::invalid_argument on bad params:
-  // missing noise model, sigma <= 0, gate <= 0.
+  // missing noise model, sigma <= 0, gate <= 0, gate_pose < 0.
   explicit Eskf(const Params& params);
 
   void initialize(const NominalState& x0, const Matrix15d& P0, double t0);
@@ -20,6 +21,12 @@ class Eskf {
   void predict(const ImuSample& imu);
 
   UpdateResult correctGnss(const GnssMeas& z);
+
+  // Full pose of the IMU (math.md 8.7), gated with Params::gate_pose. Like
+  // correctGnss, z.t is not read: the caller brings z to the filter's time.
+  // Throws std::logic_error before initialize() or while gate_pose is 0,
+  // std::invalid_argument on a bad z.q or V.
+  UpdateResult correctPose(const PoseMeas& z);
 
   // Accessors
   const NominalState& state() const { return x_; }

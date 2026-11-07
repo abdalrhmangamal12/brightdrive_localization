@@ -10,7 +10,7 @@ It is the core of the localization pipeline; the ROS 2 node and the LiDAR-to-map
 | Version | Content | Status |
 |---|---|---|
 | v1 | IMU predict + GNSS update (gate, Joseph form, lever arm, reset Jacobian G) | in progress |
-| v2 | LiDAR-to-map (NDT) pose update `correctPose()` | planned |
+| v2 | LiDAR-to-map pose update `correctPose()` (6-DoF pose of the IMU, math.md §8.7) | implemented |
 | v3 | delayed-measurement buffer | optional |
 
 ---
@@ -31,6 +31,7 @@ classDiagram
         +initialize(x0 : const NominalState ref, P0 : const Matrix15d ref, t0 : double) void
         +predict(imu : const ImuSample ref) void
         +correctGnss(z : const GnssMeas ref) UpdateResult
+        +correctPose(z : const PoseMeas ref) UpdateResult
         +state() const NominalState ref
         +covariance() const Matrix15d ref
         +time() const double
@@ -60,6 +61,7 @@ classDiagram
         +g : Vector3d
         +lever_arm : Vector3d
         +gate : double
+        +gate_pose : double
     }
 
     class ImuSample {

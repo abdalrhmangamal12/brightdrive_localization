@@ -64,4 +64,13 @@ inline Eigen::Matrix<double, 3, 15> buildHGnss(
   return H;
 }
 
+// Pose of the IMU, math.md 8.7. Rows: position (3), rotation error (3).
+// H = [ I 0 0 0 0 ; 0 0 I 0 0 ]  (6x15).
+inline Eigen::Matrix<double, 6, 15> buildHPose() {
+  Eigen::Matrix<double, 6, 15> H = Eigen::Matrix<double, 6, 15>::Zero();
+  H.block<3, 3>(0, kP) = Eigen::Matrix3d::Identity();
+  H.block<3, 3>(3, kTh) = Eigen::Matrix3d::Identity();
+  return H;
+}
+
 }  // namespace eskf

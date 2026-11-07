@@ -16,6 +16,10 @@ struct So3 {
 
   // Same rotation as a 3x3 matrix.
   static Eigen::Matrix3d ExpSO3(const Eigen::Vector3d& theta);
+
+  // Inverse of ExpQ: unit quaternion to rotation vector (axis * angle, rad),
+  // angle in [0, pi]. q and -q give the same vector.
+  static Eigen::Vector3d Log(const Eigen::Quaterniond& q);
 };
 
 }  // namespace eskf

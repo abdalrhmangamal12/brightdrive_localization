@@ -1,4 +1,4 @@
-# ESKF derivation — IMU prediction and GNSS correction
+# ESKF derivation — IMU prediction, GNSS and pose correction
 
 Step-by-step derivation of the error-state Kalman filter implemented in `eskf/`: a 6-axis IMU drives the
 prediction, GNSS position fixes drive the correction. The derivation follows J. Solà, *Quaternion kinematics for the
@@ -130,6 +130,16 @@ zero when still. In Eigen: `Quaterniond(AngleAxisd(|θ|, θ/|θ|))`.
 **Exponential map, matrix form (Rodrigues).** `ExpSO3`$(\theta)$ is the $3 \times 3$ rotation matrix of the
 quaternion `ExpQ`$(\theta)$. Both are written $\mathrm{Exp}(\cdot)$ below; which one is meant follows from
 where it is used (quaternion product or matrix product).
+
+**Logarithm, quaternion form** (Solà eq. 105), the inverse of $\mathrm{Exp}$: for a unit $q = [w,\ v]$ with
+$w \ge 0$ (flip the sign of $q$ otherwise, it is the same rotation),
+
+$$
+\mathrm{Log}(q) = \frac{2\,\mathrm{atan2}(\lVert v\rVert,\ w)}{\lVert v\rVert}\, v
+$$
+
+*The angle comes back in $[0, \pi]$. Tiny-angle case: if $\lVert v\rVert < 10^{-8}$ use $2v/w$, the inverse of
+$[1,\ \theta/2]$. `So3::Log`.*
 
 **Small-angle approximation**, first order in $\delta\theta$:
 
@@ -873,6 +883,36 @@ $$
 
 *Joseph form of eq. 276, then symmetrize: the same as $(I - KH)\,P$ on paper, but it keeps $P$ symmetric and
 positive definite in floating point.*
+
+### 8.7 Pose measurement (LiDAR scan match)
+
+A scan match gives the full pose of the LiDAR in the world; the caller moves it to the IMU with the extrinsics,
+$T_{w,\mathrm{imu}} = T_{w,\mathrm{lidar}}\,T_{\mathrm{imu},\mathrm{lidar}}^{-1}$, so the measurement is
+$z = (z_p,\ z_q)$, the IMU position and orientation.
+
+$$
+h(x_t) = (p_t,\ q_t), \qquad q_t = q \otimes \mathrm{Exp}(\delta\theta)
+$$
+
+*Position and orientation are measured directly; the orientation error is the same local error as the state.*
+
+$$
+r = \begin{bmatrix} z_p - p \\ \mathrm{Log}\!\left(q^{-1} \otimes z_q\right) \end{bmatrix} \qquad (6 \times 1)
+$$
+
+*The rotation part of the innovation is the rotation that takes the nominal to the measurement, on the right: the
+"difference" of two orientations in the local axes of the nominal, in radians.*
+
+$$
+H = \begin{bmatrix} I_3 & 0 & 0 & 0 & 0 \\ 0 & 0 & I_3 & 0 & 0 \end{bmatrix} \qquad (6 \times 15)
+$$
+
+*First order: with $q_t = q\,\mathrm{Exp}(\delta\theta)$, $\mathrm{Log}(q_t^{-1} z_q) \approx \mathrm{Log}(q^{-1} z_q) - \delta\theta$ when the
+residual is small, so $\partial h / \partial\delta\theta = I$. The neglected term grows with the residual times
+$\delta\theta$, a few percent at a 2° residual.*
+
+$V$ is $6 \times 6$ in the same order (m², rad²). Gate: $\chi^2$ with 6 degrees of freedom, 16.81 for 99 %, 22.46
+for 99.9 %, `Params::gate_pose`. Everything after $r$, $H$, $V$ is §8.6 unchanged (`applyCorrection<6>`).
 
 ---
 
