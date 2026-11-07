@@ -121,5 +121,6 @@ void StateHistory::clear() {
 
 double StateHistory::oldestPose() const { return poses_.front().t; }
 double StateHistory::newestPose() const { return poses_.back().t; }
+double StateHistory::oldestEvent() const { return events_.front().t; }
 
 }  // namespace brightdrive_localization

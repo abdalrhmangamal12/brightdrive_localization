@@ -108,12 +108,14 @@ LocalizerConfig loadLocalizerConfig(const std::string& yaml_path) {
   c.meas.sigma_pos_m = r.get<double>("meas.sigma_pos_m");
   c.meas.sigma_rot_rad = r.get<double>("meas.sigma_rot_rad");
 
+  c.accept.min_source_points = r.get<int>("accept.min_source_points");
   c.accept.min_inlier_ratio = r.get<double>("accept.min_inlier_ratio");
   c.accept.max_error_per_inlier = r.get<double>("accept.max_error_per_inlier");
   c.accept.max_jump_m = r.get<double>("accept.max_jump_m");
   c.accept.max_jump_rad = r.get<double>("accept.max_jump_rad");
   c.accept.max_age_s = r.get<double>("accept.max_age_s");
 
+  c.scan.imu_wait_s = r.get<double>("scan.imu_wait_s");
   c.history.keep_s = r.get<double>("history.keep_s");
 
   c.init.yaw_steps = r.get<int>("init.yaw_steps");

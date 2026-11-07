@@ -50,11 +50,18 @@ struct MeasConfig {
 // Quality checks before a match reaches the filter; the first failure is the
 // reject code.
 struct AcceptConfig {
+  int min_source_points = 0;  // after preprocess; below 5 no covariances exist
   double min_inlier_ratio = 0.0;
   double max_error_per_inlier = 0.0;
   double max_jump_m = 0.0;
   double max_jump_rad = 0.0;
   double max_age_s = 0.0;
+};
+
+struct ScanConfig {
+  // How long a sweep waits for the IMU sample at its end before it is
+  // skipped: deskew and the prediction need the filter's pose at t_ref.
+  double imu_wait_s = 0.0;  // wall time
 };
 
 struct HistoryConfig {
@@ -98,6 +105,7 @@ struct LocalizerConfig {
   MatcherConfig matcher;
   MeasConfig meas;
   AcceptConfig accept;
+  ScanConfig scan;
   HistoryConfig history;
   InitConfig init;
   HealthConfig health;

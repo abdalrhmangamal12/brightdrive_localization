@@ -16,13 +16,16 @@
 
 namespace brightdrive_localization {
 
-// One raw input, kept for the initializer's catch-up.
+// One raw input, exactly as the filter receives it live, kept for the
+// initializer's catch-up.
 struct Event {
   enum class Kind { kImu, kGnss };
   double t = 0.0;
   Kind kind = Kind::kImu;
   eskf::ImuSample imu;  // kind == kImu
-  eskf::GnssMeas gnss;  // kind == kGnss: IMU position in map, V [m^2]
+  // kind == kGnss: the ANTENNA position in map metres (llaToMap output) and
+  // its covariance [m^2], unchanged. correctGnss applies the lever arm itself.
+  eskf::GnssMeas gnss;
 };
 
 class StateHistory {
@@ -59,6 +62,8 @@ class StateHistory {
   double oldestPose() const;  // pose times; call only when hasPoses()
   double newestPose() const;
   size_t numPoses() const { return poses_.size(); }
+  bool hasEvents() const { return !events_.empty(); }
+  double oldestEvent() const;  // call only when hasEvents()
   size_t numEvents() const { return events_.size(); }
 
  private:

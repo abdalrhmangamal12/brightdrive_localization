@@ -69,7 +69,7 @@ target_link_libraries(match_bag loc_core)
 ament_target_dependencies(match_bag rclcpp rosbag2_cpp sensor_msgs nav_msgs geometry_msgs)
 install(TARGETS match_bag DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY config
+install(DIRECTORY config launch rviz foxglove
   DESTINATION share/${PROJECT_NAME}
   PATTERN ".gitkeep" EXCLUDE)
 

@@ -69,12 +69,14 @@ void validate(const LocalizerConfig& c) {
   positive(c.meas.sigma_pos_m, "meas.sigma_pos_m");
   positive(c.meas.sigma_rot_rad, "meas.sigma_rot_rad");
 
+  positive(c.accept.min_source_points, "accept.min_source_points");
   positive(c.accept.min_inlier_ratio, "accept.min_inlier_ratio");
   positive(c.accept.max_error_per_inlier, "accept.max_error_per_inlier");
   positive(c.accept.max_jump_m, "accept.max_jump_m");
   positive(c.accept.max_jump_rad, "accept.max_jump_rad");
   positive(c.accept.max_age_s, "accept.max_age_s");
 
+  positive(c.scan.imu_wait_s, "scan.imu_wait_s");
   positive(c.history.keep_s, "history.keep_s");
 
   const auto& i = c.init;

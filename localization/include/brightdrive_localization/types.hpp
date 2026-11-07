@@ -73,6 +73,23 @@ struct PoseSample {
 Eigen::Isometry3d interpolatePose(const PoseSample& a, const PoseSample& b,
                                   double t);
 
+// Why a scan match did not correct the filter, in the order the checks run;
+// the first failing check is the code. kGated: passed every check, then the
+// chi-square gate inside correctPose rejected it.
+enum class Reject {
+  kNone,
+  kTooFewPoints,
+  kNotConverged,
+  kErrorPerInlier,
+  kInlierRatio,
+  kNoHistory,
+  kJump,
+  kAge,
+  kGated,
+};
+inline constexpr int kNumRejectCodes = 9;
+const char* toString(Reject r);
+
 enum class Lifecycle { kWaitData, kInitializing, kTracking };
 enum class Health { kNominal, kDegraded, kDeadReckoning, kFailed };
 

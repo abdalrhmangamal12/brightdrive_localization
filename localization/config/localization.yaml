@@ -62,11 +62,16 @@
       sigma_pos_m: 0.15                  # R floors; tune to NIS mean ~6
       sigma_rot_rad: 0.025
     accept:
+      min_source_points: 1000            # after preprocess (0.5 m leaf); a CARLA sweep gives ~10 600
       min_inlier_ratio: 0.6              # gross check only: aligned sweeps sit near 1.0; watch it in dense traffic
       max_error_per_inlier: 0.12         # nominal bag: successes <= 0.087, failures >= 0.14 (dimensionless)
       max_jump_m: 3.0                    # match vs prediction, sanity bound
       max_jump_rad: 0.2
       max_age_s: 0.2                     # t_now - t_ref when the match lands
+
+    # ---- per-sweep pipeline -------------------------------------------------------------------------------------
+    scan:
+      imu_wait_s: 0.02                   # wall time a sweep waits for the IMU sample at its end, else skipped
 
     # ---- state history -------------------------------------------------------------------------------------------
     history:

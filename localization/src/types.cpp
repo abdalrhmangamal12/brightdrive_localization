@@ -27,6 +27,30 @@ Eigen::Isometry3d interpolatePose(const PoseSample& a, const PoseSample& b,
   return T;
 }
 
+const char* toString(Reject r) {
+  switch (r) {
+    case Reject::kNone:
+      return "accepted";
+    case Reject::kTooFewPoints:
+      return "too_few_points";
+    case Reject::kNotConverged:
+      return "not_converged";
+    case Reject::kErrorPerInlier:
+      return "error_per_inlier";
+    case Reject::kInlierRatio:
+      return "inlier_ratio";
+    case Reject::kNoHistory:
+      return "no_history";
+    case Reject::kJump:
+      return "jump";
+    case Reject::kAge:
+      return "age";
+    case Reject::kGated:
+      return "gated";
+  }
+  return "?";
+}
+
 const char* toString(Lifecycle s) {
   switch (s) {
     case Lifecycle::kWaitData:
