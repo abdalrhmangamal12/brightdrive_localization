@@ -1,0 +1,242 @@
+{
+ "bag": "/bags/loc_runs/tuned_live1x_dense_traffic",
+ "scenario": "dense_traffic",
+ "outputs": 21194,
+ "duration_s": 423.8599905259998,
+ "first_output_s": 3.2099999279998883,
+ "convergence_s": 3.2099999279998883,
+ "errors": {
+  "longitudinal_m": {
+   "n": 21194,
+   "rmse": 0.024882668625883005,
+   "mean_abs": 0.01971254834454983,
+   "p50": 0.016493156352793657,
+   "p95": 0.048914836448330126,
+   "p99": 0.06833212991366092,
+   "max": 0.09065066750674755
+  },
+  "lateral_m": {
+   "n": 21194,
+   "rmse": 0.02195546439305553,
+   "mean_abs": 0.017229687282164213,
+   "p50": 0.014471351608150506,
+   "p95": 0.04195958875091359,
+   "p99": 0.06113225775051023,
+   "max": 0.1625042552158419
+  },
+  "vertical_m": {
+   "n": 21194,
+   "rmse": 0.027046563882828865,
+   "mean_abs": 0.022093922680734165,
+   "p50": 0.019803274435472203,
+   "p95": 0.050703304985506514,
+   "p99": 0.06915569784969228,
+   "max": 0.1076359492133766
+  },
+  "horizontal_m": {
+   "n": 21194,
+   "rmse": 0.03318417717316841,
+   "mean_abs": 0.028925317289104763,
+   "p50": 0.02658178294539918,
+   "p95": 0.05790033331059748,
+   "p99": 0.0820867618600055,
+   "max": 0.16912599401329334
+  },
+  "heading_deg": {
+   "n": 21194,
+   "rmse": 0.04119970500954516,
+   "mean_abs": 0.03173224423672029,
+   "p50": 0.024792108213261662,
+   "p95": 0.08833044627386648,
+   "p99": 0.11113779000431921,
+   "max": 0.1388286677452047
+  },
+  "ape_trans_rmse_m": 0.042810118342842436
+ },
+ "errors_whole_run": {
+  "horizontal_m": {
+   "n": 21194,
+   "rmse": 0.03318417717316841,
+   "mean_abs": 0.028925317289104763,
+   "p50": 0.02658178294539918,
+   "p95": 0.05790033331059748,
+   "p99": 0.0820867618600055,
+   "max": 0.16912599401329334
+  },
+  "heading_deg": {
+   "n": 21194,
+   "rmse": 0.04119970500954516,
+   "mean_abs": 0.03173224423672029,
+   "p50": 0.024792108213261662,
+   "p95": 0.08833044627386648,
+   "p99": 0.11113779000431921,
+   "max": 0.1388286677452047
+  }
+ },
+ "latency_ms": {
+  "end_to_end": {
+   "n": 21195,
+   "rmse": 0.12631698162405391,
+   "mean_abs": 0.10976003964967002,
+   "p50": 0.10204315185546875,
+   "p95": 0.1888275146484375,
+   "p99": 0.2677440643310547,
+   "max": 2.761363983154297
+  },
+  "recorder_clock": "wall",
+  "processing_max_reported": 1.084,
+  "processing": {
+   "n": 3884,
+   "rmse": 0.0980233767490663,
+   "mean_abs": 0.09374510813594232,
+   "p50": 0.097,
+   "p95": 0.125,
+   "p99": 0.184,
+   "max": 0.582
+  },
+  "for_check": 0.2677440643310547
+ },
+ "sweeps": {
+  "matched": 8484,
+  "rejects": {
+   "accepted": 8481,
+   "too_few_points": 0,
+   "not_converged": 0,
+   "error_per_inlier": 3,
+   "inlier_ratio": 0,
+   "no_history": 0,
+   "jump": 0,
+   "age": 0,
+   "gated": 0
+  }
+ },
+ "nis_pose": {
+  "n": 8481,
+  "mean": 0.04539295553180851,
+  "share_above_95": 0.0,
+  "share_above_999": 0.0
+ },
+ "input_age_ms": {
+  "n": 8484,
+  "rmse": 49.86296527388978,
+  "mean_abs": 49.50612807535513,
+  "p50": 49.99999889423634,
+  "p95": 59.99999889445462,
+  "p99": 69.99999789422873,
+  "max": 89.99999789466528,
+  "trend_ms_per_min": 0.3047019969539463,
+  "first_third_p50": 49.99999889423634,
+  "last_third_p50": 49.99999889423634
+ },
+ "match_time_ms": {
+  "n": 8484,
+  "rmse": 4.965312360561116,
+  "mean_abs": 4.692981373998114,
+  "p50": 4.4799235,
+  "p95": 7.272945099999999,
+  "p99": 10.390143110000004,
+  "max": 22.339624
+ },
+ "error_per_inlier": {
+  "n": 8481,
+  "rmse": 0.07071796211542719,
+  "mean_abs": 0.07042686912409964,
+  "p50": 0.06968212278001598,
+  "p95": 0.08197912326540976,
+  "p99": 0.08685049399168072,
+  "max": 0.11391555807935815
+ },
+ "inlier_ratio": {
+  "n": 8481,
+  "rmse": 0.9958971696498071,
+  "mean_abs": 0.995892786695929,
+  "p50": 0.9967913255144943,
+  "p95": 0.9987880746546013,
+  "p99": 0.9993720807325414,
+  "max": 1.0
+ },
+ "status_last": {
+  "failures": "0",
+  "last_fail_reason": "-",
+  "init": "done",
+  "init_last_search": "e/inl 0.066, second 0.384, 20 candidates, 2 distinct, yaw -0.9 deg, hint none, search 927 ms",
+  "init_searches": "1",
+  "init_confirm_failures": "0",
+  "time_to_tracking_s": "3.19",
+  "sweeps_skipped_no_imu": "0",
+  "sweeps_skipped_no_pose": "0",
+  "match.accepted": "8478",
+  "match.too_few_points": "0",
+  "match.not_converged": "0",
+  "match.error_per_inlier": "3",
+  "match.inlier_ratio": "0",
+  "match.no_history": "0",
+  "match.jump": "0",
+  "match.age": "0",
+  "match.gated": "0",
+  "gnss.accepted": "4207",
+  "gnss.gated": "43",
+  "gnss.exact": "4244",
+  "gnss.late": "6",
+  "gnss.held": "5",
+  "gnss.dropped": "0",
+  "initialpose": "-",
+  "sweeps_received": "8539",
+  "sweeps_dropped_busy": "17"
+ },
+ "health_timeline": [
+  [
+   0.0,
+   3.19,
+   "INITIALIZING"
+  ],
+  [
+   3.2,
+   427.03,
+   "TRACKING NOMINAL"
+  ]
+ ],
+ "failed_status_count": 0,
+ "dynamics": {
+  "speed_max_mps": 8.238839262934283,
+  "yaw_rate_max_dps": 77.4771493765054,
+  "lat_accel_max_mps2": 10.443626251381422
+ },
+ "checks": [
+  {
+   "check": "lateral p95 [m]",
+   "value": 0.04195958875091359,
+   "threshold": 0.2,
+   "pass": true,
+   "why": "lateral 95 % accuracy for a passenger car on a freeway lane (Reid et al. 2019)"
+  },
+  {
+   "check": "longitudinal p95 [m]",
+   "value": 0.048914836448330126,
+   "threshold": 0.48,
+   "pass": true,
+   "why": "longitudinal 95 % accuracy, same source; along-track error is less critical"
+  },
+  {
+   "check": "heading p95 [deg]",
+   "value": 0.08833044627386648,
+   "threshold": 0.5,
+   "pass": true,
+   "why": "0.5 deg at 20 m look-ahead is 0.17 m lateral, inside the lateral budget"
+  },
+  {
+   "check": "horizontal max [m]",
+   "value": 0.16912599401329334,
+   "threshold": 0.57,
+   "pass": true,
+   "why": "lateral alert limit (Reid et al. 2019): never leave the lane margin"
+  },
+  {
+   "check": "latency p99 [ms]",
+   "value": 0.2677440643310547,
+   "threshold": 20.0,
+   "pass": true,
+   "why": "one output period at 50 Hz: no consumer sees a pose older than one step"
+  }
+ ]
+}

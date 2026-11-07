@@ -1,5 +1,6 @@
 | run | scenario | APE [m] | lat p95 [m] | lon p95 [m] | head p95 [deg] | max [m] | conv [s] | latency p99 [ms] (1) | age p99 [ms] | NIS mean | rejected / matches | outage drift [m] | outage recovery [s] | result |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| clone_nominal | nominal | 0.086 | 0.126 | 0.079 | 0.22 | 0.400 | 11.9 | 0.23 | 60 | 0.27 | 8 / 4857 | - | - | pass |
 | dense_traffic | dense_traffic | 0.074 | 0.048 | 0.055 | 0.15 | 1.620 | 3.2 | 0.16 | 20 | 0.24 | 26 / 7705 | - | - | FAIL: horizontal max [m] |
 | gnss_outage | gnss_outage | 0.086 | 0.111 | 0.073 | 0.22 | 0.394 | 3.2 | 0.19 | 20 | 0.27 | 2 / 2940 | 0.095 | 0.2 | pass |
 | high_speed_turns | high_speed_turns | 0.085 | 0.096 | 0.088 | 0.19 | 0.454 | 3.1 | 0.22 | 20 | 0.28 | 3 / 4403 | - | - | pass |
@@ -11,9 +12,18 @@
 | live1x_reverse_reuse | reverse_reuse | 0.060 | 0.037 | 0.118 | 0.13 | 0.139 | 7.2 | 0.25 | 60 | 0.09 | 3 / 732 | - | - | pass |
 | nominal | nominal | 0.079 | 0.104 | 0.077 | 0.22 | 0.395 | 3.1 | 0.21 | 237 | 0.23 | 62 / 4931 | - | - | pass |
 | relocalization | relocalization | 0.073 | 0.112 | 0.064 | 0.21 | 0.305 | 3.9 | 0.22 | 20 | 0.23 | 3 / 2331 | - | - | pass |
+| replay_dense_traffic_20261107_151340 | dense_traffic | 0.041 | 0.040 | 0.046 | 0.09 | 0.112 | 3.2 | 0.21 | 30 | 0.05 | 8 / 7727 | - | - | pass |
+| replay_gnss_outage_20261107_150233 | gnss_outage | 0.043 | 0.045 | 0.046 | 0.07 | 0.101 | 3.2 | 0.21 | 30 | 0.04 | 1 / 2941 | 0.070 | 0.2 | pass |
+| replay_high_speed_turns_20261107_152715 | high_speed_turns | 0.044 | 0.042 | 0.051 | 0.08 | 0.140 | 3.2 | 0.21 | 30 | 0.04 | 2 / 4400 | - | - | pass |
+| replay_nominal_20261107_144548 | nominal | 0.044 | 0.045 | 0.049 | 0.07 | 0.132 | 3.1 | 0.22 | 200 | 0.04 | 53 / 5018 | - | - | pass |
+| replay_relocalization_20261107_150912 | relocalization | 0.042 | 0.044 | 0.047 | 0.08 | 0.123 | 3.3 | 0.21 | 30 | 0.05 | 1 / 2339 | - | - | pass |
+| replay_reverse_reuse_20261107_153511 | reverse_reuse | 0.046 | 0.033 | 0.081 | 0.10 | 0.102 | 5.8 | 0.21 | 30 | 0.05 | 2 / 757 | - | - | pass |
 | reverse_reuse | reverse_reuse | 0.060 | 0.034 | 0.126 | 0.18 | 0.142 | 4.3 | 0.19 | 20 | 0.08 | 3 / 785 | - | - | pass |
 | step6_relocalization | relocalization | 0.089 | 0.134 | 0.072 | 0.21 | 0.425 | 3.8 | 0.23 | 20 | 0.35 | 3 / 2328 | - | - | pass |
 | step7_gnss_outage | gnss_outage | 0.091 | 0.115 | 0.076 | 0.22 | 0.429 | 3.1 | 0.22 | 20 | 0.31 | 2 / 2941 | 0.093 | 0.1 | pass |
+| tuned_live1x_dense_traffic | dense_traffic | 0.043 | 0.042 | 0.049 | 0.09 | 0.169 | 3.2 | 0.27 | 70 | 0.05 | 3 / 8484 | - | - | pass |
+| tuned_live1x_nominal | nominal | 0.045 | 0.046 | 0.049 | 0.08 | 0.168 | 3.2 | 0.23 | 60 | 0.04 | 2 / 5024 | - | - | pass |
+| tuned_unseen_speed_plus20 | nominal | 0.046 | 0.044 | 0.050 | 0.09 | 0.173 | 3.2 | 0.23 | 60 | 0.06 | 3 / 4200 | - | - | pass |
 | unseen_gnss_outage_45s | gnss_outage | 0.088 | 0.116 | 0.072 | 0.22 | 0.407 | 3.1 | 0.24 | 60 | 0.27 | 1 / 2942 | 0.097 | 0.2 | pass |
 | unseen_init_8m_90deg | relocalization | 0.074 | 0.106 | 0.068 | 0.22 | 0.306 | 3.4 | 0.24 | 60 | 0.22 | 1 / 2330 | - | - | pass |
 | unseen_speed_plus20 | nominal | 0.150 | 0.158 | 0.137 | 0.29 | 0.734 | 5.2 | 0.23 | 80 | 0.93 | 4 / 4165 | - | - | FAIL: horizontal max [m] |
