@@ -36,8 +36,8 @@
     # ---- eskf::Params ------------------------------------------------------------------------------------------
     eskf:
       noise_model: per_sample            # CARLA sigmas are per reading (sensors.yaml); density for a datasheet IMU
-      sigma_a: 0.05                      # [m/s^2]  raising sigma_a / sigma_g widens P_v over the corner jolts
-      sigma_g: 0.005                     # [rad/s]
+      sigma_a: 0.5                       # [m/s^2] per reading; 10x the CARLA value: covers the curb jolts at corners
+      sigma_g: 0.05                      # [rad/s]  per reading; 10x the CARLA value, same reason
       sigma_ba: 0.0001                   # [m/s^2/sqrt(s)]
       sigma_bg: 0.00001                  # [rad/s/sqrt(s)]
       lever_arm: [0.0, 0.0, 1.8]         # GNSS antenna in IMU axes [m]
