@@ -55,6 +55,7 @@ Localizer::Localizer(const LocalizerConfig& cfg)
       T_lidar_imu_(T_imu_lidar_.inverse()),
       V_pose_(Matrix6d::Zero()),
       deskewer_(T_imu_lidar_),
+      initializer_(cfg.init, cfg.accept, cfg.eskf.lever_arm, T_imu_lidar_),
       eskf_(cfg.eskf),
       history_(cfg.history.keep_s) {
   const double sp = cfg.meas.sigma_pos_m * cfg.meas.sigma_pos_m;
@@ -75,12 +76,17 @@ void Localizer::onImu(const eskf::ImuSample& s_in) {
     e.kind = Event::Kind::kImu;
     e.imu = s;
     history_.pushEvent(e);
+    if (!have_imu_) {
+      have_init_start_t_ = true;
+      init_start_t_ = s.t;
+    }
     have_imu_ = true;
     last_gyro_ = s.gyro;
-    if (lifecycle_ == Lifecycle::kWaitData && have_fix_) {
+    if (lifecycle_ == Lifecycle::kWaitData) {
       lifecycle_ = Lifecycle::kInitializing;
+      init_state_ = "waiting for GNSS";
     }
-    if (lifecycle_ == Lifecycle::kTracking) {
+    if (filter_active_) {
       predictLocked(s);
       releaseHeldGnssLocked();
     }
@@ -97,10 +103,7 @@ void Localizer::onGnss(const eskf::GnssMeas& z) {
   history_.pushEvent(e);
   if (!have_fix_ || z.t >= latest_fix_.t) latest_fix_ = z;
   have_fix_ = true;
-  if (lifecycle_ == Lifecycle::kWaitData && have_imu_) {
-    lifecycle_ = Lifecycle::kInitializing;
-  }
-  if (lifecycle_ == Lifecycle::kTracking) handleGnssLocked(z);
+  if (filter_active_) handleGnssLocked(z);
 }
 
 void Localizer::onInitialPose(const Eigen::Isometry3d& T_map_base,
@@ -189,13 +192,13 @@ void Localizer::releaseHeldGnssLocked() {
 // -----------------------------------------------------------------------------------------
 
 SweepReport Localizer::processScan(Scan scan, const ScanMatcher& matcher) {
-  Lifecycle lc;
+  bool active;
   {
     std::lock_guard<std::mutex> lk(mtx_);
-    lc = lifecycle_;
+    active = filter_active_;
   }
-  if (lc == Lifecycle::kTracking) return trackSweep(std::move(scan), matcher);
-  return startSweep(std::move(scan), matcher);
+  if (active) return trackSweep(std::move(scan), matcher);
+  return initSweep(std::move(scan), matcher);
 }
 
 SweepReport Localizer::trackSweep(Scan scan, const ScanMatcher& matcher) {
@@ -211,11 +214,11 @@ SweepReport Localizer::trackSweep(Scan scan, const ScanMatcher& matcher) {
     // sample at t_ref may still be on its way.
     const bool ready = imu_cv_.wait_for(
         lk, std::chrono::duration<double>(cfg_.scan.imu_wait_s), [&] {
-          return lifecycle_ != Lifecycle::kTracking ||
+          return !filter_active_ ||
                  (history_.hasPoses() &&
                   history_.newestPose() >= t_ref - kSameTime);
         });
-    if (lifecycle_ != Lifecycle::kTracking) {
+    if (!filter_active_) {
       rep.kind = SweepReport::Kind::kNotReady;
       return rep;
     }
@@ -245,12 +248,44 @@ SweepReport Localizer::trackSweep(Scan scan, const ScanMatcher& matcher) {
   rep.match = m;
 
   std::lock_guard<std::mutex> lk(mtx_);
-  if (lifecycle_ != Lifecycle::kTracking) {
+  if (!filter_active_) {
     rep.kind = SweepReport::Kind::kNotReady;
     return rep;
   }
   onMatchLocked(m, t_ref, rep);
+  if (confirming_) {
+    // Confirmation: confirm_n accepted sweeps in a row through the normal
+    // update, else the candidate is discarded.
+    if (rep.reject == Reject::kNone) {
+      ++confirm_count_;
+      init_state_ = "confirming " + std::to_string(confirm_count_) + "/" +
+                    std::to_string(cfg_.init.confirm_n);
+      if (confirm_count_ >= cfg_.init.confirm_n) {
+        confirming_ = false;
+        lifecycle_ = Lifecycle::kTracking;
+        init_state_ = "done";
+        if (time_to_tracking_s_ < 0.0 && have_init_start_t_) {
+          time_to_tracking_s_ = eskf_.time() - init_start_t_;
+        }
+      }
+    } else {
+      ++init_confirm_failures_;
+      discardFilterLocked(std::string("confirmation failed: ") +
+                          toString(rep.reject));
+    }
+  }
   return rep;
+}
+
+void Localizer::discardFilterLocked(const std::string& why) {
+  b_g_prev_ = eskf_.state().b_g;
+  filter_active_ = false;
+  confirming_ = false;
+  confirm_count_ = 0;
+  history_.clearPoses();
+  held_gnss_.clear();
+  lifecycle_ = Lifecycle::kInitializing;
+  init_state_ = "searching (" + why + ")";
 }
 
 // Estimator core: acceptance, forwarding, pose update, history patch.
@@ -323,140 +358,82 @@ void Localizer::onMatchLocked(const MatchResult& m, double t_ref,
   ++reject_counts_[static_cast<size_t>(code)];
 }
 
-// Simple start: the latest GNSS fix gives the position, a heading grid on the
-// coarse map gives the yaw, the best fine match by error per inlier gives the
-// full pose of the sweep. The full initializer (margin, confirmation,
-// /initialpose, re-initialization) replaces it.
-SweepReport Localizer::startSweep(Scan scan, const ScanMatcher& matcher) {
+// Initialization: seed from the latest GNSS fix (and the /initialpose heading
+// as a hint), search on this raw sweep, initialize at the sweep time, catch up
+// with the stored raw events, then confirm through the normal update.
+SweepReport Localizer::initSweep(Scan scan, const ScanMatcher& matcher) {
   SweepReport rep;
   rep.kind = SweepReport::Kind::kNotReady;
   const double t_scan = scan.tMax();
   rep.t_ref = t_scan;
   const auto& ini = cfg_.init;
-  const auto& a = cfg_.accept;
 
-  eskf::GnssMeas fix;
-  Eigen::Vector3d b_g = Eigen::Vector3d::Zero();
-  bool still = false;
+  InitSeed seed;
+  StillWindow still;
   {
     std::lock_guard<std::mutex> lk(mtx_);
-    if (!have_imu_ || !have_fix_ ||
+    if (!have_imu_) return rep;
+    if (!have_fix_ ||
         std::abs(latest_fix_.t - t_scan) > ini.seed_gnss_max_age_s) {
-      start_info_ = "waiting for GNSS";
+      init_state_ = "waiting for GNSS";
       return rep;
     }
-    fix = latest_fix_;
-    // Still window: the stored raw IMU samples up to the sweep end.
+    // The still window must be in the history before the first search, so a
+    // cold start sees the car standing and takes b_g from it.
+    if (!history_.hasEvents() ||
+        history_.oldestEvent() > t_scan - ini.still_window_s) {
+      init_state_ = "waiting for the IMU window";
+      return rep;
+    }
+    seed.fix = latest_fix_;  // raw antenna position
+    if (have_initialpose_) seed.yaw_hint = initialpose_yaw_;
     std::vector<eskf::ImuSample> imu;
     for (const Event& e : history_.eventsAfter(t_scan - ini.still_window_s)) {
       if (e.kind == Event::Kind::kImu && e.t <= t_scan) imu.push_back(e.imu);
     }
-    if (imu.size() >= 10 &&
-        imu.back().t - imu.front().t >= 0.5 * ini.still_window_s) {
-      Eigen::Vector3d gyro_sum = Eigen::Vector3d::Zero();
-      double gyro_max = 0.0, acc_sum = 0.0, acc_sq = 0.0;
-      for (const auto& s : imu) {
-        gyro_sum += s.gyro;
-        gyro_max = std::max(gyro_max, s.gyro.norm());
-        acc_sum += s.acc.norm();
-        acc_sq += s.acc.squaredNorm();
-      }
-      const double n = static_cast<double>(imu.size());
-      const double acc_mean = acc_sum / n;
-      const double acc_std =
-          std::sqrt(std::max(0.0, acc_sq / n - acc_mean * acc_mean));
-      still = gyro_max < kStillMaxGyro && acc_std < kStillMaxAccStd;
-      if (still) b_g = gyro_sum / n;
-    }
-    ++start_attempts_;
+    still = initializer_.stillWindow(imu);
+    ++init_searches_;
+    init_state_ = "searching";
   }
 
-  const auto t_start = Clock::now();
   // Raw sweep: there are no filter poses to deskew with yet.
   const small_gicp::PointCloud::Ptr source = matcher.preprocess(scan);
   rep.source = source;
-  rep.kind = SweepReport::Kind::kStartFailed;
-  if (static_cast<int>(source->size()) < a.min_source_points) {
-    std::lock_guard<std::mutex> lk(mtx_);
-    start_info_ = "failed: too few points";
-    return rep;
-  }
-
-  struct Candidate {
-    double yaw;
-    MatchResult m;
-  };
-  std::vector<Candidate> coarse;
-  for (int k = 0; k < ini.yaw_steps; ++k) {
-    const double yaw = 2.0 * M_PI * k / ini.yaw_steps;
-    Eigen::Isometry3d T_map_imu = Eigen::Isometry3d::Identity();
-    T_map_imu.linear() =
-        Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()).toRotationMatrix();
-    // The seed's IMU position for this heading: antenna minus the rotated
-    // lever arm. Only for this search; the stored fix stays raw.
-    T_map_imu.translation() = fix.z - T_map_imu.linear() * cfg_.eskf.lever_arm;
-    MatchResult m = matcher.align(*source, T_map_imu * T_imu_lidar_,
-                                  ScanMatcher::Level::kCoarse);
-    if (m.num_inliers > 0 && m.inlierRatio() >= a.min_inlier_ratio) {
-      coarse.push_back({yaw, m});
-    }
-  }
-  std::sort(coarse.begin(), coarse.end(),
-            [](const Candidate& l, const Candidate& r) {
-              return l.m.errorPerInlier() < r.m.errorPerInlier();
-            });
-  std::vector<Candidate> fine;
-  for (size_t i = 0;
-       i < coarse.size() && i < static_cast<size_t>(ini.refine_top); ++i) {
-    MatchResult f = matcher.align(*source, coarse[i].m.T_map_lidar,
-                                  ScanMatcher::Level::kFine);
-    fine.push_back({coarse[i].yaw, f});
-  }
-  std::sort(fine.begin(), fine.end(),
-            [](const Candidate& l, const Candidate& r) {
-              return l.m.errorPerInlier() < r.m.errorPerInlier();
-            });
-  const double search_ms =
-      std::chrono::duration<double>(Clock::now() - t_start).count() * 1e3;
-  const bool found = !fine.empty() && fine[0].m.converged &&
-                     fine[0].m.errorPerInlier() <= a.max_error_per_inlier &&
-                     fine[0].m.inlierRatio() >= a.min_inlier_ratio;
+  const InitResult r = initializer_.search(*source, seed, matcher);
+  rep.match = r.match;
 
   std::lock_guard<std::mutex> lk(mtx_);
-  if (!found) {
-    start_info_ = "failed: best e/inl " +
-                  (fine.empty() ? std::string("-")
-                                : fmt("%.3f", fine[0].m.errorPerInlier()));
+  char buf[256];
+  std::snprintf(
+      buf, sizeof(buf),
+      "e/inl %.3f, second %.3f, %d candidates, %d distinct, yaw %.1f "
+      "deg, hint %s, search %.0f ms%s%s",
+      r.error_per_inlier, r.second_error_per_inlier, r.candidates, r.distinct,
+      yawOf(r.T_map_imu.linear()) / kDeg,
+      seed.yaw_hint ? fmt("%.1f deg", *seed.yaw_hint / kDeg).c_str() : "none",
+      r.search_ms, r.found ? "" : ": ", r.found ? "" : r.reason.c_str());
+  init_last_result_ = buf;
+  if (!r.found) {
+    rep.kind = SweepReport::Kind::kStartFailed;
+    init_state_ = "searching (" + r.reason + ")";
     return rep;
   }
   if (!history_.hasEvents() || history_.oldestEvent() > t_scan) {
-    start_info_ = "failed: search outlived the event history";
+    rep.kind = SweepReport::Kind::kStartFailed;
+    init_state_ = "searching (the search outlived the event history)";
     return rep;
   }
 
-  const Candidate& best = fine[0];
-  const Eigen::Isometry3d T0 = best.m.T_map_lidar * T_lidar_imu_;
-  eskf::NominalState x0;
-  x0.p = T0.translation();
-  x0.q = unitQuaternion(T0.linear());
-  x0.b_g = b_g;
-  const double sv = still ? ini.p0_sigma_vel_mps : ini.p0_sigma_vel_moving_mps;
-  const double srp = ini.p0_sigma_rollpitch_deg * kDeg;
-  const double syaw = ini.p0_sigma_yaw_deg * kDeg;
-  eskf::Vector15d sig;
-  sig << Eigen::Vector3d::Constant(ini.p0_sigma_pos_m),
-      Eigen::Vector3d::Constant(sv), srp, srp, syaw,
-      Eigen::Vector3d::Constant(ini.p0_sigma_ba),
-      Eigen::Vector3d::Constant(ini.p0_sigma_bg);
-  const eskf::Matrix15d P0 = sig.cwiseAbs2().asDiagonal();
-  eskf_.initialize(x0, P0, t_scan);
+  const eskf::NominalState x0 = initializer_.x0(r, still, b_g_prev_);
+  eskf_.initialize(x0, initializer_.P0(still), t_scan);
   history_.clearPoses();
   history_.pushPose(t_scan, x0);
   T_odom_base_ = mapBaseLocked();  // odom starts on map
   held_gnss_.clear();
-  lifecycle_ = Lifecycle::kTracking;
+  filter_active_ = true;
+  confirming_ = true;
+  confirm_count_ = 0;
   // Catch up from the sweep to now with the stored raw inputs.
-  size_t replayed = 0;
   for (const Event& e : history_.eventsAfter(t_scan)) {
     if (e.kind == Event::Kind::kImu) {
       predictLocked(e.imu);
@@ -464,21 +441,11 @@ SweepReport Localizer::startSweep(Scan scan, const ScanMatcher& matcher) {
     } else {
       handleGnssLocked(e.gnss);
     }
-    ++replayed;
   }
-  char buf[256];
-  std::snprintf(
-      buf, sizeof(buf),
-      "yaw grid %d at GNSS (age %.2f s): yaw %.1f deg, e/inl %.3f "
-      "(next %s), %s, search %.0f ms, %zu events replayed",
-      ini.yaw_steps, std::abs(t_scan - fix.t), yawOf(T0.linear()) / kDeg,
-      best.m.errorPerInlier(),
-      fine.size() > 1 ? fmt("%.3f", fine[1].m.errorPerInlier()).c_str() : "-",
-      still ? "still (b_g from gyro mean)" : "moving (b_g = 0)", search_ms,
-      replayed);
-  start_info_ = buf;
+  init_state_ = "confirming 0/" + std::to_string(ini.confirm_n) +
+                (still.still ? " (still: b_g from the gyro mean)"
+                             : " (moving: large sigma_v)");
   rep.kind = SweepReport::Kind::kStarted;
-  rep.match = best.m;
   return rep;
 }
 
@@ -566,8 +533,15 @@ std::vector<std::pair<std::string, std::string>> Localizer::statusValues()
   const double t = eskf_.time();
   kv.emplace_back("lifecycle", toString(lifecycle_));
   kv.emplace_back("health", tracking ? toString(healthLocked()) : "-");
-  kv.emplace_back("start", start_info_);
-  kv.emplace_back("filter_time_s", tracking ? fmt("%.3f", t) : "-");
+  kv.emplace_back("init", init_state_);
+  kv.emplace_back("init_last_search", init_last_result_);
+  kv.emplace_back("init_searches", std::to_string(init_searches_));
+  kv.emplace_back("init_confirm_failures",
+                  std::to_string(init_confirm_failures_));
+  kv.emplace_back("time_to_tracking_s", time_to_tracking_s_ >= 0.0
+                                            ? fmt("%.2f", time_to_tracking_s_)
+                                            : "-");
+  kv.emplace_back("filter_time_s", filter_active_ ? fmt("%.3f", t) : "-");
   kv.emplace_back("nis_pose", fmt("%.3f", last_nis_pose_));
   kv.emplace_back(
       "nis_pose_mean",
@@ -595,7 +569,6 @@ std::vector<std::pair<std::string, std::string>> Localizer::statusValues()
                   std::to_string(sweeps_skipped_no_imu_));
   kv.emplace_back("sweeps_skipped_no_pose",
                   std::to_string(sweeps_skipped_no_pose_));
-  kv.emplace_back("start_attempts", std::to_string(start_attempts_));
   for (int c = 0; c < kNumRejectCodes; ++c) {
     kv.emplace_back(std::string("match.") + toString(static_cast<Reject>(c)),
                     std::to_string(reject_counts_[static_cast<size_t>(c)]));

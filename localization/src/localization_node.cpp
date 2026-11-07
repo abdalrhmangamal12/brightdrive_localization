@@ -593,12 +593,14 @@ class LocalizationNode : public rclcpp::Node {
     st.name = "localization";
     st.hardware_id = "brightdrive_localization";
     std::string health = "-";
+    std::string init = "-";
     for (const auto& [k, v] : loc_->statusValues()) {
       diagnostic_msgs::msg::KeyValue kv;
       kv.key = k;
       kv.value = v;
       st.values.push_back(kv);
       if (k == "health") health = v;
+      if (k == "init") init = v;
     }
     {
       std::lock_guard<std::mutex> lk(slot_mtx_);
@@ -623,8 +625,13 @@ class LocalizationNode : public rclcpp::Node {
     } else {
       st.level = DS::WARN;
     }
-    st.message = std::string(toString(lc)) +
-                 (lc == Lifecycle::kTracking ? " " + health : "");
+    if (lc == Lifecycle::kTracking) {
+      st.message = "TRACKING " + health;
+    } else if (lc == Lifecycle::kInitializing) {
+      st.message = "initializing: " + init;
+    } else {
+      st.message = toString(lc);
+    }
 
     diagnostic_msgs::msg::DiagnosticArray arr;
     arr.header.stamp = toStamp(t);

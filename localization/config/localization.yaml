@@ -75,7 +75,7 @@
 
     # ---- state history -------------------------------------------------------------------------------------------
     history:
-      keep_s: 2.0                        # poses + events: deskew, forwarding, init catch-up
+      keep_s: 3.0                        # poses + events: deskew, forwarding; init: still window (2 s) + search
 
     # ---- initializer -----------------------------------------------------------------------------------------------
     init:

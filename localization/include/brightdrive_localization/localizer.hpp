@@ -1,7 +1,8 @@
 // The localization core around eskf::Eskf: IMU prediction, GNSS and LiDAR
 // pose corrections with late-measurement forwarding, the per-sweep pipeline
-// (wait for the IMU, deskew, match, accept), a simple start, a provisional
-// health level, the status values and the outputs. No ROS.
+// (wait for the IMU, deskew, match, accept), initialization (search, catch-up,
+// confirmation), a provisional health level, the status values and the
+// outputs. No ROS.
 //
 // Threads: onImu / onGnss / onInitialPose / output / statusValues from the
 // executor, processScan from the matcher thread. One mutex guards all state;
@@ -20,6 +21,7 @@
 #include <vector>
 
 #include "brightdrive_localization/deskewer.hpp"
+#include "brightdrive_localization/initializer.hpp"
 #include "brightdrive_localization/params.hpp"
 #include "brightdrive_localization/scan_matcher.hpp"
 #include "brightdrive_localization/state_history.hpp"
@@ -33,12 +35,12 @@ using Matrix6d = Eigen::Matrix<double, 6, 6>;
 // What one sweep produced, for the debug topics.
 struct SweepReport {
   enum class Kind {
-    kNotReady,       // no GNSS fix fresh enough to start from, or no IMU yet
+    kNotReady,       // waiting for GNSS, for the IMU window, or not tracking
     kSkippedNoImu,   // the IMU sample at the sweep end did not arrive in time
     kSkippedNoPose,  // the sweep starts before the filter's history
-    kStartFailed,    // the start search found no acceptable heading
-    kStarted,        // the filter was initialized on this sweep
-    kMatched,        // tracking: matched, then accepted or rejected
+    kStartFailed,    // the initializer found no acceptable pose on this sweep
+    kStarted,        // the filter was initialized on this sweep (confirming)
+    kMatched,  // matched, then accepted or rejected (confirming or tracking)
   };
   Kind kind = Kind::kNotReady;
   double t_ref = 0.0;
@@ -89,7 +91,7 @@ class Localizer {
 
  private:
   SweepReport trackSweep(Scan scan, const ScanMatcher& matcher);
-  SweepReport startSweep(Scan scan, const ScanMatcher& matcher);
+  SweepReport initSweep(Scan scan, const ScanMatcher& matcher);
 
   // Everything below needs mtx_ held.
   Eigen::Isometry3d mapImuLocked() const;
@@ -99,6 +101,8 @@ class Localizer {
   void applyGnssLocked(const eskf::GnssMeas& z);
   void releaseHeldGnssLocked();
   void onMatchLocked(const MatchResult& m, double t_ref, SweepReport& rep);
+  // The filter goes back to "not initialized": search again.
+  void discardFilterLocked(const std::string& why);
   Health healthLocked() const;
   double sigmaPosLocked() const;
 
@@ -108,6 +112,7 @@ class Localizer {
   Eigen::Isometry3d T_lidar_imu_;
   Matrix6d V_pose_;
   Deskewer deskewer_;
+  Initializer initializer_;
 
   mutable std::mutex mtx_;
   std::condition_variable imu_cv_;  // notified after every IMU sample
@@ -115,6 +120,13 @@ class Localizer {
   eskf::Eskf eskf_;
   StateHistory history_;
   Lifecycle lifecycle_ = Lifecycle::kWaitData;
+  // The filter runs (predicts, takes fixes and matches) while confirming and
+  // while tracking.
+  bool filter_active_ = false;
+  bool confirming_ = false;
+  int confirm_count_ = 0;
+  Eigen::Vector3d b_g_prev_ =
+      Eigen::Vector3d::Zero();  // from a discarded filter
   Eigen::Isometry3d T_odom_base_ = Eigen::Isometry3d::Identity();
   std::deque<eskf::GnssMeas> held_gnss_;  // fixes newer than the filter
 
@@ -142,11 +154,17 @@ class Localizer {
   int consecutive_gated_ = 0;
   long sweeps_skipped_no_imu_ = 0;
   long sweeps_skipped_no_pose_ = 0;
-  long start_attempts_ = 0;
+  long init_searches_ = 0;
+  long init_confirm_failures_ = 0;
+  bool have_init_start_t_ = false;
+  double init_start_t_ =
+      0.0;  // first IMU sample: the clock of time_to_tracking
+  double time_to_tracking_s_ = -1.0;
+  std::string init_last_result_ = "-";
   std::array<long, kNumRejectCodes> reject_counts_{};
   long gnss_exact_ = 0, gnss_late_ = 0, gnss_held_ = 0, gnss_dropped_ = 0;
   long gnss_accepted_ = 0, gnss_gated_ = 0;
-  std::string start_info_ = "not started";
+  std::string init_state_ = "waiting for IMU";
 };
 
 }  // namespace brightdrive_localization
