@@ -1,0 +1,272 @@
+{
+ "bag": "/bags/loc_runs/replay2_nom_sa0.05_sg0.005",
+ "scenario": "nominal",
+ "outputs": 12483,
+ "duration_s": 249.63999442,
+ "first_output_s": 4.229999906000103,
+ "convergence_s": 4.229999906000103,
+ "errors": {
+  "longitudinal_m": {
+   "n": 12483,
+   "rmse": 0.03760371295711541,
+   "mean_abs": 0.029720627100170944,
+   "p50": 0.024727012753525318,
+   "p95": 0.07663957970042957,
+   "p99": 0.10048504623237432,
+   "max": 0.11111885601656389
+  },
+  "lateral_m": {
+   "n": 12483,
+   "rmse": 0.0601727328170192,
+   "mean_abs": 0.03318858796576742,
+   "p50": 0.020763696381047577,
+   "p95": 0.10528813892112757,
+   "p99": 0.3234530238919206,
+   "max": 0.403354062684479
+  },
+  "vertical_m": {
+   "n": 12483,
+   "rmse": 0.03579637090192949,
+   "mean_abs": 0.02868032666664215,
+   "p50": 0.02279579603895021,
+   "p95": 0.07233910457033912,
+   "p99": 0.09509666896821697,
+   "max": 0.10976467329542283
+  },
+  "horizontal_m": {
+   "n": 12483,
+   "rmse": 0.07095630347495217,
+   "mean_abs": 0.05013830824233862,
+   "p50": 0.03825214016079971,
+   "p95": 0.12113718311118529,
+   "p99": 0.3275156371503677,
+   "max": 0.40472426262801275
+  },
+  "heading_deg": {
+   "n": 12483,
+   "rmse": 0.0968702452370954,
+   "mean_abs": 0.07057193331178574,
+   "p50": 0.04964190506861667,
+   "p95": 0.2206140004062122,
+   "p99": 0.292638891368861,
+   "max": 0.3590305049346169
+  },
+  "ape_trans_rmse_m": 0.0794743806051863
+ },
+ "errors_whole_run": {
+  "horizontal_m": {
+   "n": 12483,
+   "rmse": 0.07095630347495217,
+   "mean_abs": 0.05013830824233862,
+   "p50": 0.03825214016079971,
+   "p95": 0.12113718311118529,
+   "p99": 0.3275156371503677,
+   "max": 0.40472426262801275
+  },
+  "heading_deg": {
+   "n": 12483,
+   "rmse": 0.0968702452370954,
+   "mean_abs": 0.07057193331178574,
+   "p50": 0.04964190506861667,
+   "p95": 0.2206140004062122,
+   "p99": 0.292638891368861,
+   "max": 0.3590305049346169
+  }
+ },
+ "latency_ms": {
+  "end_to_end": {
+   "n": 12480,
+   "rmse": 0.09959088848617102,
+   "mean_abs": 0.08104965090751648,
+   "p50": 0.07224082946777344,
+   "p95": 0.15687942504882812,
+   "p99": 0.2319812774658203,
+   "max": 2.9218196868896484
+  },
+  "recorder_clock": "wall",
+  "processing_max_reported": 0.734,
+  "processing": {
+   "n": 2309,
+   "rmse": 0.08841390514382014,
+   "mean_abs": 0.08501255954958857,
+   "p50": 0.087,
+   "p95": 0.115,
+   "p99": 0.14884000000000014,
+   "max": 0.286
+  },
+  "for_check": 0.2319812774658203
+ },
+ "sweeps": {
+  "matched": 4979,
+  "rejects": {
+   "accepted": 4932,
+   "too_few_points": 0,
+   "not_converged": 2,
+   "error_per_inlier": 2,
+   "inlier_ratio": 0,
+   "no_history": 0,
+   "jump": 0,
+   "age": 43,
+   "gated": 0
+  }
+ },
+ "nis_pose": {
+  "n": 4932,
+  "mean": 0.23041650619101414,
+  "share_above_95": 0.0,
+  "share_above_999": 0.0
+ },
+ "input_age_ms": {
+  "n": 4979,
+  "rmse": 57.03439425727362,
+  "mean_abs": 34.093190643459515,
+  "p50": 29.999998894140845,
+  "p95": 39.99999889413175,
+  "p99": 169.99999589404524,
+  "max": 929.9999788941022,
+  "trend_ms_per_min": 4.215313289773371,
+  "first_third_p50": 29.999998894140845,
+  "last_third_p50": 29.999998894140845
+ },
+ "match_time_ms": {
+  "n": 4979,
+  "rmse": 4.92119475369282,
+  "mean_abs": 4.600935770837518,
+  "p50": 4.297556,
+  "p95": 7.2693682999999965,
+  "p99": 9.945674580000006,
+  "max": 50.460056
+ },
+ "error_per_inlier": {
+  "n": 4932,
+  "rmse": 0.06814395988063858,
+  "mean_abs": 0.06784483195587906,
+  "p50": 0.06763753611573103,
+  "p95": 0.07889938587457525,
+  "p99": 0.08547379522183747,
+  "max": 0.10707423832574332
+ },
+ "inlier_ratio": {
+  "n": 4932,
+  "rmse": 0.9972502355874315,
+  "mean_abs": 0.9972469073032486,
+  "p50": 0.997919162167051,
+  "p95": 0.9996253803916394,
+  "p99": 0.9998853831302049,
+  "max": 1.0
+ },
+ "status_last": {
+  "failures": "0",
+  "last_fail_reason": "-",
+  "init": "done",
+  "init_last_search": "e/inl 0.065, second 0.416, 22 candidates, 2 distinct, yaw -0.9 deg, hint none, search 968 ms",
+  "init_searches": "1",
+  "init_confirm_failures": "0",
+  "time_to_tracking_s": "4.21",
+  "sweeps_skipped_no_imu": "0",
+  "sweeps_skipped_no_pose": "0",
+  "match.accepted": "4929",
+  "match.too_few_points": "0",
+  "match.not_converged": "2",
+  "match.error_per_inlier": "2",
+  "match.inlier_ratio": "0",
+  "match.no_history": "0",
+  "match.jump": "0",
+  "match.age": "43",
+  "match.gated": "0",
+  "gnss.accepted": "2489",
+  "gnss.gated": "29",
+  "gnss.exact": "2515",
+  "gnss.late": "3",
+  "gnss.held": "8",
+  "gnss.dropped": "0",
+  "initialpose": "-",
+  "sweeps_received": "5075",
+  "sweeps_dropped_busy": "58"
+ },
+ "health_timeline": [
+  [
+   0.0,
+   4.18,
+   "INITIALIZING"
+  ],
+  [
+   4.22,
+   194.96,
+   "TRACKING NOMINAL"
+  ],
+  [
+   195.07,
+   195.95,
+   "TRACKING DEGRADED"
+  ],
+  [
+   196.06,
+   208.6,
+   "TRACKING NOMINAL"
+  ],
+  [
+   208.71,
+   208.82,
+   "TRACKING DEGRADED"
+  ],
+  [
+   208.93,
+   223.45,
+   "TRACKING NOMINAL"
+  ],
+  [
+   223.56,
+   223.78,
+   "TRACKING DEGRADED"
+  ],
+  [
+   223.89,
+   253.81,
+   "TRACKING NOMINAL"
+  ]
+ ],
+ "failed_status_count": 0,
+ "dynamics": {
+  "speed_max_mps": 8.132066487643879,
+  "yaw_rate_max_dps": 114.58614904417975,
+  "lat_accel_max_mps2": 15.688998471166558
+ },
+ "checks": [
+  {
+   "check": "lateral p95 [m]",
+   "value": 0.10528813892112757,
+   "threshold": 0.2,
+   "pass": true,
+   "why": "lateral 95 % accuracy for a passenger car on a freeway lane (Reid et al. 2019)"
+  },
+  {
+   "check": "longitudinal p95 [m]",
+   "value": 0.07663957970042957,
+   "threshold": 0.48,
+   "pass": true,
+   "why": "longitudinal 95 % accuracy, same source; along-track error is less critical"
+  },
+  {
+   "check": "heading p95 [deg]",
+   "value": 0.2206140004062122,
+   "threshold": 0.5,
+   "pass": true,
+   "why": "0.5 deg at 20 m look-ahead is 0.17 m lateral, inside the lateral budget"
+  },
+  {
+   "check": "horizontal max [m]",
+   "value": 0.40472426262801275,
+   "threshold": 0.57,
+   "pass": true,
+   "why": "lateral alert limit (Reid et al. 2019): never leave the lane margin"
+  },
+  {
+   "check": "latency p99 [ms]",
+   "value": 0.2319812774658203,
+   "threshold": 20.0,
+   "pass": true,
+   "why": "one output period at 50 Hz: no consumer sees a pose older than one step"
+  }
+ ]
+}

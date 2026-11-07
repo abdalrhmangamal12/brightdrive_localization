@@ -1,0 +1,263 @@
+{
+ "bag": "/bags/loc_runs/replay2_hs_sa0.05_sg0.005",
+ "scenario": "high_speed_turns",
+ "outputs": 10947,
+ "duration_s": 218.9199951070002,
+ "first_output_s": 4.029999910000015,
+ "convergence_s": 4.029999910000015,
+ "errors": {
+  "longitudinal_m": {
+   "n": 10947,
+   "rmse": 0.04068291508807456,
+   "mean_abs": 0.03119416741534994,
+   "p50": 0.02484580856791734,
+   "p95": 0.08931727486542024,
+   "p99": 0.11256894052242065,
+   "max": 0.12833254178769588
+  },
+  "lateral_m": {
+   "n": 10947,
+   "rmse": 0.06732177001509905,
+   "mean_abs": 0.03525126942535728,
+   "p50": 0.021579148230361816,
+   "p95": 0.09804137981004242,
+   "p99": 0.39093615623861444,
+   "max": 0.45115663757105506
+  },
+  "vertical_m": {
+   "n": 10947,
+   "rmse": 0.03454868315317065,
+   "mean_abs": 0.028692074529071406,
+   "p50": 0.024677008255673982,
+   "p95": 0.0662092209899829,
+   "p99": 0.08047584625980789,
+   "max": 0.08877535449830523
+  },
+  "horizontal_m": {
+   "n": 10947,
+   "rmse": 0.07865952134375961,
+   "mean_abs": 0.0533811151732485,
+   "p50": 0.03964270268942091,
+   "p95": 0.11609223759106232,
+   "p99": 0.4017170064986168,
+   "max": 0.4613980140455232
+  },
+  "heading_deg": {
+   "n": 10947,
+   "rmse": 0.10594703672312031,
+   "mean_abs": 0.07813821793118263,
+   "p50": 0.059190268510466174,
+   "p95": 0.19437121540875707,
+   "p99": 0.42201183819115184,
+   "max": 0.5164974255765967
+  },
+  "ape_trans_rmse_m": 0.08591234955259663
+ },
+ "errors_whole_run": {
+  "horizontal_m": {
+   "n": 10947,
+   "rmse": 0.07865952134375961,
+   "mean_abs": 0.0533811151732485,
+   "p50": 0.03964270268942091,
+   "p95": 0.11609223759106232,
+   "p99": 0.4017170064986168,
+   "max": 0.4613980140455232
+  },
+  "heading_deg": {
+   "n": 10947,
+   "rmse": 0.10594703672312031,
+   "mean_abs": 0.07813821793118263,
+   "p50": 0.059190268510466174,
+   "p95": 0.19437121540875707,
+   "p99": 0.42201183819115184,
+   "max": 0.5164974255765967
+  }
+ },
+ "latency_ms": {
+  "end_to_end": {
+   "n": 10948,
+   "rmse": 0.09906258100562963,
+   "mean_abs": 0.07621689699930477,
+   "p50": 0.06794929504394531,
+   "p95": 0.1468658447265625,
+   "p99": 0.22278308868408422,
+   "max": 3.044605255126953
+  },
+  "recorder_clock": "wall",
+  "processing_max_reported": 0.406,
+  "processing": {
+   "n": 2028,
+   "rmse": 0.08864852589854058,
+   "mean_abs": 0.08507889546351084,
+   "p50": 0.087,
+   "p95": 0.115,
+   "p99": 0.14973,
+   "max": 0.318
+  },
+  "for_check": 0.22278308868408422
+ },
+ "sweeps": {
+  "matched": 4384,
+  "rejects": {
+   "accepted": 4382,
+   "too_few_points": 0,
+   "not_converged": 0,
+   "error_per_inlier": 2,
+   "inlier_ratio": 0,
+   "no_history": 0,
+   "jump": 0,
+   "age": 0,
+   "gated": 0
+  }
+ },
+ "nis_pose": {
+  "n": 4382,
+  "mean": 0.2798894077471369,
+  "share_above_95": 0.0,
+  "share_above_999": 0.0
+ },
+ "input_age_ms": {
+  "n": 4384,
+  "rmse": 30.205348832004013,
+  "mean_abs": 29.685218316058428,
+  "p50": 29.99999889425453,
+  "p95": 39.99999889401806,
+  "p99": 39.999999894462235,
+  "max": 69.99999889421815,
+  "trend_ms_per_min": 0.6405017669047395,
+  "first_third_p50": 29.99999889425453,
+  "last_third_p50": 29.99999889425453
+ },
+ "match_time_ms": {
+  "n": 4384,
+  "rmse": 5.241377781304988,
+  "mean_abs": 4.93940118134124,
+  "p50": 4.585907,
+  "p95": 8.181730899999993,
+  "p99": 10.84437956000001,
+  "max": 21.342663
+ },
+ "error_per_inlier": {
+  "n": 4382,
+  "rmse": 0.06835488735523322,
+  "mean_abs": 0.06809249693127044,
+  "p50": 0.06825524173563237,
+  "p95": 0.07887095156036367,
+  "p99": 0.08311790510712583,
+  "max": 0.09716338742324042
+ },
+ "inlier_ratio": {
+  "n": 4382,
+  "rmse": 0.9972599730697455,
+  "mean_abs": 0.9972577489413579,
+  "p50": 0.997756105713429,
+  "p95": 0.9996069656471822,
+  "p99": 0.9998666532776364,
+  "max": 1.0
+ },
+ "status_last": {
+  "failures": "0",
+  "last_fail_reason": "-",
+  "init": "done",
+  "init_last_search": "e/inl 0.065, second 0.357, 21 candidates, 2 distinct, yaw -0.9 deg, hint none, search 884 ms",
+  "init_searches": "1",
+  "init_confirm_failures": "0",
+  "time_to_tracking_s": "4.02",
+  "sweeps_skipped_no_imu": "0",
+  "sweeps_skipped_no_pose": "0",
+  "match.accepted": "4381",
+  "match.too_few_points": "0",
+  "match.not_converged": "0",
+  "match.error_per_inlier": "2",
+  "match.inlier_ratio": "0",
+  "match.no_history": "0",
+  "match.jump": "0",
+  "match.age": "0",
+  "match.gated": "0",
+  "gnss.accepted": "2178",
+  "gnss.gated": "31",
+  "gnss.exact": "2209",
+  "gnss.late": "0",
+  "gnss.held": "1",
+  "gnss.dropped": "0",
+  "initialpose": "-",
+  "sweeps_received": "4456",
+  "sweeps_dropped_busy": "34"
+ },
+ "health_timeline": [
+  [
+   0.0,
+   3.96,
+   "INITIALIZING"
+  ],
+  [
+   4.03,
+   222.93,
+   "TRACKING NOMINAL"
+  ]
+ ],
+ "failed_status_count": 0,
+ "dynamics": {
+  "speed_max_mps": 15.016215855278187,
+  "yaw_rate_max_dps": 114.66566121939807,
+  "lat_accel_max_mps2": 15.705189120179059
+ },
+ "high_speed": {
+  "samples": 1309,
+  "heading_deg": {
+   "n": 1309,
+   "rmse": 0.12178533757542771,
+   "mean_abs": 0.10430165608053549,
+   "p50": 0.09841487581492314,
+   "p95": 0.19826652886389579,
+   "p99": 0.20972615803029654,
+   "max": 0.21881397643110156
+  },
+  "lateral_m": {
+   "n": 1309,
+   "rmse": 0.0341634604420113,
+   "mean_abs": 0.029113116806834337,
+   "p50": 0.0260966458551006,
+   "p95": 0.0647551893957083,
+   "p99": 0.07945822421173485,
+   "max": 0.08735702735560288
+  }
+ },
+ "checks": [
+  {
+   "check": "lateral p95 [m]",
+   "value": 0.09804137981004242,
+   "threshold": 0.2,
+   "pass": true,
+   "why": "lateral 95 % accuracy for a passenger car on a freeway lane (Reid et al. 2019)"
+  },
+  {
+   "check": "longitudinal p95 [m]",
+   "value": 0.08931727486542024,
+   "threshold": 0.48,
+   "pass": true,
+   "why": "longitudinal 95 % accuracy, same source; along-track error is less critical"
+  },
+  {
+   "check": "heading p95, fast parts [deg]",
+   "value": 0.19826652886389579,
+   "threshold": 1.0,
+   "pass": true,
+   "why": "relaxed heading bound for the 15 m/s turns"
+  },
+  {
+   "check": "horizontal max [m]",
+   "value": 0.4613980140455232,
+   "threshold": 0.57,
+   "pass": true,
+   "why": "lateral alert limit (Reid et al. 2019): never leave the lane margin"
+  },
+  {
+   "check": "latency p99 [ms]",
+   "value": 0.22278308868408422,
+   "threshold": 20.0,
+   "pass": true,
+   "why": "one output period at 50 Hz: no consumer sees a pose older than one step"
+  }
+ ]
+}
