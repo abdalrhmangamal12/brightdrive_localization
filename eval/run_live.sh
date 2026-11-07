@@ -8,6 +8,7 @@
 #   --outputs-only  no scenario recording; our recorder on the wall clock records the outputs, status, TF, the IMU
 #                   and /eval/* but not /points_raw (latency, input age, processing time)
 #   --node-arg      a ros2 launch argument for localization.launch.py (e.g. params_file:=/tmp/x.yaml)
+#   env EXTRA_TOPICS (more topics to record with --outputs-only), METRICS_ARGS (extra loc_metrics.py options)
 #
 # Writes /bags/loc_runs/<name>.node.log (+ <name>/ with --outputs-only) and eval/results/<name>/ (metrics, plots).
 # Needs the loc image built; starts the loc container and carla-server (through run.sh) when they are not up.
@@ -29,6 +30,7 @@ HOST_RUNS="$(grep -E '^BAGS_DIR=' .env | cut -d= -f2)/loc_runs"
 mkdir -p "$HOST_RUNS"
 TOPICS="/localization/pose /localization/velocity /localization/odometry /localization/status /localization/path \
 /localization/debug/match /tf /tf_static /clock /imu/data /eval/ground_truth /eval/gnss_outage /eval/init_offset /initialpose"
+TOPICS="$TOPICS ${EXTRA_TOPICS:-}"   # more topics for the outputs-only recorder (variants)
 
 docker compose up -d loc > /dev/null
 in_loc() { docker compose exec -T loc bash -c "source /opt/ros/humble/setup.bash; source install/setup.bash; $1"; }
@@ -59,5 +61,5 @@ for _ in $(seq 60); do
 done
 in_loc "ros2 bag info $BAG 2>/dev/null | grep -E 'Duration|Messages'" || true
 echo "[run_live] metrics for $BAG"
-in_loc "MPLCONFIGDIR=/tmp/mpl python3 eval/loc_metrics.py $BAG --scenario $SCENARIO --out eval/results/$NAME"
+in_loc "MPLCONFIGDIR=/tmp/mpl python3 eval/loc_metrics.py $BAG --scenario $SCENARIO --out eval/results/$NAME ${METRICS_ARGS:-}"
 echo "[run_live] bag: $BAG"

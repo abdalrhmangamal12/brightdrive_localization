@@ -25,10 +25,12 @@ def main():
     rows = []
     for m in sorted(root.glob('*/metrics.json')):
         r = json.loads(m.read_text())
+        if 'checks' not in r:
+            continue  # not a localization run (e.g. eval/results/mapping)
         failed = [c['check'] for c in r.get('checks', []) if not c['pass']]
         rej = g(r, 'sweeps', 'rejects') or {}
         rows.append([
-            m.parent.name, r.get('scenario'),
+            m.parent.name, str(r.get('scenario')),
             f(g(r, 'errors', 'ape_trans_rmse_m')), f(g(r, 'errors', 'lateral_m', 'p95')),
             f(g(r, 'errors', 'longitudinal_m', 'p95')), f(g(r, 'errors', 'heading_deg', 'p95'), '%.2f'),
             f(g(r, 'errors', 'horizontal_m', 'max')), f(r.get('convergence_s'), '%.1f'),

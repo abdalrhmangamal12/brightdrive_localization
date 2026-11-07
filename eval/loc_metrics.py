@@ -137,13 +137,16 @@ def main():
     ap.add_argument('bag')
     ap.add_argument('--scenario', default='nominal')
     ap.add_argument('--out', required=True)
+    ap.add_argument('--outage-topic', default='/eval/gnss_outage')
+    ap.add_argument('--initialpose-topic', default='/initialpose')
+    ap.add_argument('--init-offset-topic', default='/eval/init_offset')
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
     m = read_bag(args.bag, ['/eval/ground_truth', '/localization/pose', '/localization/status',
-                            '/localization/debug/match', '/imu/data', '/eval/gnss_outage', '/eval/init_offset',
-                            '/initialpose'])
+                            '/localization/debug/match', '/imu/data', args.outage_topic, args.init_offset_topic,
+                            args.initialpose_topic])
     if not m['/eval/ground_truth'] or not m['/localization/pose']:
         raise SystemExit('the bag needs /eval/ground_truth and /localization/pose')
 
@@ -177,8 +180,8 @@ def main():
     # Reference time for convergence: the first IMU sample (relocalization: the /initialpose stamp).
     imu_stamps = [stamp(i.header) for _, i in m['/imu/data']]
     t_ref0 = min(imu_stamps) if imu_stamps else gt_t[0]
-    if args.scenario == 'relocalization' and m['/initialpose']:
-        t_ref0 = stamp(m['/initialpose'][0][1].header)
+    if args.scenario == 'relocalization' and m[args.initialpose_topic]:
+        t_ref0 = stamp(m[args.initialpose_topic][0][1].header)
     good = (horiz < CONV_POS_M) & (np.abs(head) < CONV_HEAD_DEG)
     t_conv = None
     j = 0
@@ -258,8 +261,8 @@ def main():
 
     # Scenario sections.
     outage = None
-    if m['/eval/gnss_outage']:
-        warn = [stamp(a.header) for _, a in m['/eval/gnss_outage'] if a.status and level(a.status[0]) == 1]
+    if m[args.outage_topic]:
+        warn = [stamp(a.header) for _, a in m[args.outage_topic] if a.status and level(a.status[0]) == 1]
         if warn:
             outage = (min(warn), max(warn))
     if outage and status:
@@ -274,7 +277,7 @@ def main():
                               if sw else None,
                               'recovery_to_nominal_s': float(after[0] - te) if after else None}
     if args.scenario == 'relocalization':
-        off = m['/eval/init_offset'][0][1] if m['/eval/init_offset'] else None
+        off = m[args.init_offset_topic][0][1] if m[args.init_offset_topic] else None
         last = e_t >= e_t[-1] - 10.0
         res['relocalization'] = {'init_offset_m': float(math.hypot(off.vector.x, off.vector.y)) if off else None,
                                  'init_heading_offset_deg': float(off.vector.z) if off else None,
