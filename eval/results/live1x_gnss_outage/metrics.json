@@ -1,0 +1,288 @@
+{
+ "bag": "/bags/loc_runs/live1x_gnss_outage",
+ "scenario": "gnss_outage",
+ "outputs": 7341,
+ "duration_s": 146.79999671900032,
+ "first_output_s": 3.2099999279998883,
+ "convergence_s": 3.2099999279998883,
+ "errors": {
+  "longitudinal_m": {
+   "n": 7341,
+   "rmse": 0.038800323340177856,
+   "mean_abs": 0.030972807046701543,
+   "p50": 0.025435189088358835,
+   "p95": 0.07637911754425045,
+   "p99": 0.09982657108762572,
+   "max": 0.1090249058303812
+  },
+  "lateral_m": {
+   "n": 7341,
+   "rmse": 0.07273316338214454,
+   "mean_abs": 0.03695187573128899,
+   "p50": 0.021210006510706446,
+   "p95": 0.11915908690309387,
+   "p99": 0.3853730358348115,
+   "max": 0.42061060637187925
+  },
+  "vertical_m": {
+   "n": 7341,
+   "rmse": 0.038994935159634085,
+   "mean_abs": 0.031585447239903884,
+   "p50": 0.026490426858150153,
+   "p95": 0.073371211305302,
+   "p99": 0.10303428361493096,
+   "max": 0.1110954987652874
+  },
+  "horizontal_m": {
+   "n": 7341,
+   "rmse": 0.08243529672947192,
+   "mean_abs": 0.05484389047535499,
+   "p50": 0.03969511860237526,
+   "p95": 0.12467662891183513,
+   "p99": 0.3873542116459826,
+   "max": 0.42267682153727637
+  },
+  "heading_deg": {
+   "n": 7341,
+   "rmse": 0.09650484102961483,
+   "mean_abs": 0.06574077690268894,
+   "p50": 0.03740194215365357,
+   "p95": 0.22090227596333653,
+   "p99": 0.3279390428359019,
+   "max": 0.35282916379583756
+  },
+  "ape_trans_rmse_m": 0.0911931089226601
+ },
+ "errors_whole_run": {
+  "horizontal_m": {
+   "n": 7341,
+   "rmse": 0.08243529672947192,
+   "mean_abs": 0.05484389047535499,
+   "p50": 0.03969511860237526,
+   "p95": 0.12467662891183513,
+   "p99": 0.3873542116459826,
+   "max": 0.42267682153727637
+  },
+  "heading_deg": {
+   "n": 7341,
+   "rmse": 0.09650484102961483,
+   "mean_abs": 0.06574077690268894,
+   "p50": 0.03740194215365357,
+   "p95": 0.22090227596333653,
+   "p99": 0.3279390428359019,
+   "max": 0.35282916379583756
+  }
+ },
+ "latency_ms": {
+  "end_to_end": {
+   "n": 7342,
+   "rmse": 0.12950610391275755,
+   "mean_abs": 0.11047388870168597,
+   "p50": 0.10442733764648438,
+   "p95": 0.18237829208374018,
+   "p99": 0.23264169692993175,
+   "max": 3.036022186279297
+  },
+  "recorder_clock": "wall",
+  "processing_max_reported": 0.964,
+  "processing": {
+   "n": 1365,
+   "rmse": 0.09311185915348438,
+   "mean_abs": 0.08986227106227106,
+   "p50": 0.097,
+   "p95": 0.117,
+   "p99": 0.1403599999999999,
+   "max": 0.272
+  },
+  "for_check": 0.23264169692993175
+ },
+ "sweeps": {
+  "matched": 2942,
+  "rejects": {
+   "accepted": 2941,
+   "too_few_points": 0,
+   "not_converged": 0,
+   "error_per_inlier": 1,
+   "inlier_ratio": 0,
+   "no_history": 0,
+   "jump": 0,
+   "age": 0,
+   "gated": 0
+  }
+ },
+ "nis_pose": {
+  "n": 2941,
+  "mean": 0.2965407553630426,
+  "share_above_95": 0.0,
+  "share_above_999": 0.0
+ },
+ "input_age_ms": {
+  "n": 2942,
+  "rmse": 47.86360244241146,
+  "mean_abs": 47.50849655960029,
+  "p50": 49.999998893781594,
+  "p95": 59.99999789401045,
+  "p99": 59.99999889445462,
+  "max": 79.99999889398168,
+  "trend_ms_per_min": 1.356366255651069,
+  "first_third_p50": 49.999998893781594,
+  "last_third_p50": 49.999998893781594
+ },
+ "match_time_ms": {
+  "n": 2942,
+  "rmse": 5.20644259281403,
+  "mean_abs": 4.879577457511897,
+  "p50": 4.5048695,
+  "p95": 8.192185449999998,
+  "p99": 11.94591316000001,
+  "max": 18.621755
+ },
+ "error_per_inlier": {
+  "n": 2941,
+  "rmse": 0.06947214524011368,
+  "mean_abs": 0.06906503826552529,
+  "p50": 0.06916677148478981,
+  "p95": 0.08132341534805045,
+  "p99": 0.09888385021950193,
+  "max": 0.10776899568243065
+ },
+ "inlier_ratio": {
+  "n": 2941,
+  "rmse": 0.9971946654954845,
+  "mean_abs": 0.9971895398592553,
+  "p50": 0.9979110962566845,
+  "p95": 0.9996361651810078,
+  "p99": 0.9998895832870033,
+  "max": 1.0
+ },
+ "status_last": {
+  "failures": "0",
+  "last_fail_reason": "-",
+  "init": "done",
+  "init_last_search": "e/inl 0.065, second 0.436, 22 candidates, 3 distinct, yaw -0.9 deg, hint none, search 932 ms",
+  "init_searches": "1",
+  "init_confirm_failures": "0",
+  "time_to_tracking_s": "3.19",
+  "sweeps_skipped_no_imu": "0",
+  "sweeps_skipped_no_pose": "0",
+  "match.accepted": "2938",
+  "match.too_few_points": "0",
+  "match.not_converged": "0",
+  "match.error_per_inlier": "1",
+  "match.inlier_ratio": "0",
+  "match.no_history": "0",
+  "match.jump": "0",
+  "match.age": "0",
+  "match.gated": "0",
+  "gnss.accepted": "1164",
+  "gnss.gated": "15",
+  "gnss.exact": "1179",
+  "gnss.late": "0",
+  "gnss.held": "2",
+  "gnss.dropped": "0",
+  "initialpose": "-",
+  "sweeps_received": "2998",
+  "sweeps_dropped_busy": "17"
+ },
+ "health_timeline": [
+  [
+   0.0,
+   3.19,
+   "INITIALIZING"
+  ],
+  [
+   3.2,
+   60.84,
+   "TRACKING NOMINAL"
+  ],
+  [
+   60.95,
+   89.99,
+   "TRACKING DEGRADED"
+  ],
+  [
+   90.1,
+   149.94,
+   "TRACKING NOMINAL"
+  ]
+ ],
+ "failed_status_count": 0,
+ "gnss_outage": {
+  "start_s": 60.01,
+  "end_s": 89.91,
+  "peak_drift_m": 0.0974335551780151,
+  "sigma_pos_max_m": 0.03304494694413622,
+  "degraded_share_in_window": 1.0,
+  "recovery_to_nominal_s": 0.18999999600009687
+ },
+ "dynamics": {
+  "speed_max_mps": 8.147593935265391,
+  "yaw_rate_max_dps": 114.6014142296649,
+  "lat_accel_max_mps2": 15.711642123506502
+ },
+ "checks": [
+  {
+   "check": "lateral p95 [m]",
+   "value": 0.11915908690309387,
+   "threshold": 0.2,
+   "pass": true,
+   "why": "lateral 95 % accuracy for a passenger car on a freeway lane (Reid et al. 2019)"
+  },
+  {
+   "check": "longitudinal p95 [m]",
+   "value": 0.07637911754425045,
+   "threshold": 0.48,
+   "pass": true,
+   "why": "longitudinal 95 % accuracy, same source; along-track error is less critical"
+  },
+  {
+   "check": "heading p95 [deg]",
+   "value": 0.22090227596333653,
+   "threshold": 0.5,
+   "pass": true,
+   "why": "0.5 deg at 20 m look-ahead is 0.17 m lateral, inside the lateral budget"
+  },
+  {
+   "check": "horizontal max [m]",
+   "value": 0.42267682153727637,
+   "threshold": 0.57,
+   "pass": true,
+   "why": "lateral alert limit (Reid et al. 2019): never leave the lane margin"
+  },
+  {
+   "check": "latency p99 [ms]",
+   "value": 0.23264169692993175,
+   "threshold": 20.0,
+   "pass": true,
+   "why": "one output period at 50 Hz: no consumer sees a pose older than one step"
+  },
+  {
+   "check": "outage peak drift [m]",
+   "value": 0.0974335551780151,
+   "threshold": 0.57,
+   "pass": true,
+   "why": "the alert limit also holds while GNSS is gone"
+  },
+  {
+   "check": "NOMINAL after outage [s]",
+   "value": 0.18999999600009687,
+   "threshold": 5.0,
+   "pass": true,
+   "why": "NOMINAL within 5 s after GNSS returns: a few fixes to re-confirm"
+  },
+  {
+   "check": "DEGRADED through the window",
+   "value": 1.0,
+   "threshold": 1.0,
+   "pass": true,
+   "why": "one absolute source lost = DEGRADED by definition"
+  },
+  {
+   "check": "never FAILED",
+   "value": 0,
+   "threshold": 0,
+   "pass": true,
+   "why": "the outage is expected, not a failure"
+  }
+ ]
+}

@@ -6,3 +6,5 @@ log/
 .cache/
 compile_commands.json
 __pycache__/
+# regenerable trajectory exports (eval/gt_to_tum.py, eval/loc_to_tum.py)
+eval/results/**/*_tum.txt
