@@ -168,12 +168,20 @@ class BackendNode : public rclcpp::Node {
     RCLCPP_INFO(get_logger(), "mapping backend ready");
   }
 
-  // Joins the loop thread and saves the map. Called from main() after spin()
-  // returns, never from a destructor.
+  // Joins the loop thread and saves the map, unless nothing arrived since the
+  // last save (the replay launch saves through the service first). Called
+  // from main() after spin() returns, never from a destructor.
   void stop() {
     if (!running_.exchange(false)) return;
     stop_cv_.notify_all();
     if (loop_thread_.joinable()) loop_thread_.join();
+    if (backend_->numKeyframes() == saved_keyframes_ &&
+        backend_->numLoops() == saved_loops_) {
+      RCLCPP_INFO(
+          get_logger(),
+          "save_map (shutdown): nothing new since the last save, skipped");
+      return;
+    }
     saveMap("shutdown");
   }
 
@@ -466,6 +474,10 @@ class BackendNode : public rclcpp::Node {
       message = std::string("save failed: ") + e.what();
     }
     RCLCPP_INFO(get_logger(), "save_map (%s): %s", who, message.c_str());
+    if (message.rfind("saved", 0) == 0) {
+      saved_keyframes_ = backend_->numKeyframes();
+      saved_loops_ = backend_->numLoops();
+    }
     return message;
   }
 
@@ -521,6 +533,8 @@ class BackendNode : public rclcpp::Node {
   uint64_t last_status_scans_ = 0;
 
   std::atomic<bool> running_{false};
+  int saved_keyframes_ = -1;  // counts at the last successful save
+  int saved_loops_ = -1;
   std::mutex stop_mtx_;
   std::condition_variable stop_cv_;
   std::thread loop_thread_;
