@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -243,6 +244,26 @@ void writePcd(const std::string& path, const Cloud& cloud) {
   if (pcl::io::savePCDFileBinary(path, cloud) != 0) {
     throw std::runtime_error("cannot write " + path);
   }
+}
+
+// One keyframe cloud in the map frame with the sensor pose in the PCD header
+// (VIEWPOINT = translation, quaternion w x y z): the per-frame layout that
+// DUFOMap and the DynamicMap_Benchmark tools read.
+void writeKeyframePcd(const std::string& path, const Cloud& body,
+                      const Eigen::Isometry3d& T_map_body) {
+  Cloud map;
+  pcl::transformPointCloud(body, map, T_map_body.matrix().cast<float>());
+  const Eigen::Vector3f t = T_map_body.translation().cast<float>();
+  map.sensor_origin_ = Eigen::Vector4f(t.x(), t.y(), t.z(), 0.0f);
+  map.sensor_orientation_ =
+      Eigen::Quaternionf(T_map_body.linear().cast<float>());
+  writePcd(path, map);
+}
+
+std::string keyframeFileName(int k) {
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%06d.pcd", k);
+  return buf;
 }
 
 // What a reader of the map needs to place it: frames, resolution, the
@@ -623,11 +644,17 @@ bool Backend::saveMap(const std::string& dir, const MapSource& source) {
   raw.reserve(poses.size());
   times.reserve(poses.size());
   Cloud sum;
+  const std::string kf_dir = dir + "/keyframes";
+  if (cfg_.save_keyframes) std::filesystem::create_directories(kf_dir);
   for (size_t k = 0; k < poses.size(); ++k) {
     poses[k] = summary.T_mo * poses[k];
     raw.push_back(keyframes_[k].T_odom);
     times.push_back(keyframes_[k].t);
     appendTransformed(*keyframes_[k].cloud_body, poses[k], sum);
+    if (cfg_.save_keyframes) {
+      writeKeyframePcd(kf_dir + "/" + keyframeFileName(static_cast<int>(k)),
+                       *keyframes_[k].cloud_body, poses[k]);
+    }
   }
   const CloudPtr map = voxelDownsample(sum, cfg_.save_resolution);
 

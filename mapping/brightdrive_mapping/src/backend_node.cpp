@@ -248,6 +248,8 @@ class BackendNode : public rclcpp::Node {
     cfg_.origin_frame = requiredString("origin_frame");
     cfg_.map_name = requiredString("map_name");
     cfg_.save_resolution = requiredDouble("save_resolution");
+    // The one backend key with a default: a per-run switch the launch sets.
+    cfg_.save_keyframes = declare_parameter<bool>("save_keyframes", false);
     logParams();
   }
 
@@ -271,9 +273,9 @@ class BackendNode : public rclcpp::Node {
                 np_.source.backend_commit.c_str());
     RCLCPP_INFO(get_logger(),
                 "frames: map_frame %s, origin_frame %s; map_name %s, "
-                "save_resolution %.2f m",
+                "save_resolution %.2f m, save_keyframes %d",
                 c.map_frame.c_str(), c.origin_frame.c_str(), c.map_name.c_str(),
-                c.save_resolution);
+                c.save_resolution, c.save_keyframes);
     RCLCPP_INFO(get_logger(), "gnss_lever_arm %s m (antenna in the IMU frame)",
                 toString(c.lever_arm).c_str());
     RCLCPP_INFO(get_logger(),

@@ -3,6 +3,10 @@
 # then shuts down; the SIGINT makes the node leave spin(), and main() saves the map through stop().
 #
 #   ros2 launch brightdrive_mapping backend_replay.launch.py [bag:=/bags/<run>] [rate:=2] [save_dir:=/maps]
+#                                                           [save_keyframes:=true] [loop_enable:=false]
+#
+# save_keyframes and loop_enable override backend.yaml for one run: the per-keyframe PCDs feed the dynamic-object
+# filter, and a run without loop closure is one row of the evaluation table.
 #
 # The run bags have no /clock (the recorder stamped wall time), so the node runs on wall time; every header the
 # backend reads is sim time and only those stamps are used for pairing, TF and the trajectory.
@@ -15,6 +19,7 @@ from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo, Regi
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 # Seconds between the backend start and the first bag message: the subscriptions must exist before the bag's
@@ -57,6 +62,9 @@ def generate_launch_description():
             'source_bag': LaunchConfiguration('bag'),
             'frontend_commit': git_short_head(FRONTEND_SRC),
             'backend_commit': git_short_head(BACKEND_SRC),
+            # ParameterValue: a launch argument is a string, the node wants a bool.
+            'save_keyframes': ParameterValue(LaunchConfiguration('save_keyframes'), value_type=bool),
+            'loop_enable': ParameterValue(LaunchConfiguration('loop_enable'), value_type=bool),
         }],
         sigterm_timeout=SAVE_TIMEOUT_S,
         sigkill_timeout=SAVE_TIMEOUT_S,
@@ -82,6 +90,9 @@ def generate_launch_description():
                               description='rosbag2 directory with /Odometry, /cloud_registered_body, /gnss/fix'),
         DeclareLaunchArgument('rate', default_value='2', description='ros2 bag play --rate'),
         DeclareLaunchArgument('save_dir', default_value='/maps', description='where saveMap writes'),
+        DeclareLaunchArgument('save_keyframes', default_value='false',
+                              description='also write <save_dir>/keyframes/NNNNNN.pcd per keyframe'),
+        DeclareLaunchArgument('loop_enable', default_value='true', description='loop-closure thread on or off'),
         backend,
         TimerAction(period=BACKEND_WARMUP_S, actions=[play]),
         shutdown_after_bag,

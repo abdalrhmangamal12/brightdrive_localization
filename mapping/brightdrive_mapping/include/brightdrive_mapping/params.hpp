@@ -55,6 +55,10 @@ struct BackendConfig {
   std::string origin_frame;      // the front-end's fixed frame (TF child)
   std::string map_name;          // <dir>/<map_name>.pcd
   double save_resolution = 0.0;  // voxel size of the saved map [m]
+  // Also write every keyframe cloud as <dir>/keyframes/NNNNNN.pcd in the map
+  // frame with its pose in the PCD header: the input of per-frame
+  // dynamic-object filters (DUFOMap, DynamicMap_Benchmark unified format).
+  bool save_keyframes = false;
 };
 
 }  // namespace brightdrive_mapping

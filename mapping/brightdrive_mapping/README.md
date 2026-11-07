@@ -137,6 +137,7 @@ classDiagram
         +loop_rot_scale, loop_trans_scale : double
         +map_frame, origin_frame, map_name : string
         +save_resolution : double
+        +save_keyframes : bool
     }
 
     class geo {
@@ -265,6 +266,7 @@ every value it loaded.
 | `origin_frame` | | `fastlio_origin` | the front-end's fixed frame (`fastlio_carla.yaml` `frames.map_frame`) |
 | `map_name` | | `town03` | `<save_dir>/<map_name>.pcd` |
 | `save_resolution` | m | 0.2 | voxel size of the saved and published map |
+| `save_keyframes` | | false | also write `<save_dir>/keyframes/NNNNNN.pcd` per keyframe for the dynamic-object filter; a launch argument too |
 
 ## Outputs in `/maps`
 
@@ -275,6 +277,8 @@ every value it loaded.
 | `trajectory_fastlio_tum.txt` | the same keyframes at their raw front-end poses in `origin_frame` |
 | `loops.txt` | accepted loop closures, `cur prev fitness` |
 | `map.yaml` | source bag and commits, frames, resolution, counts, lever arm, georeference formula, `T_mo` (xyz, quaternion, yaw/pitch/roll), GNSS factors / dropped / residual RMS, alignment time, loops accepted / rejected |
+| `keyframes/NNNNNN.pcd` | with `save_keyframes`: every keyframe cloud in `map`, its pose in the PCD `VIEWPOINT` line (DUFOMap unified format) |
+| `town03_static.pcd`, `town03_dynamic.pcd`, `town03_dynamic_bev.png` | written by `scripts/dynamic_filter.py`: the map without dynamic objects, what it removed, and the picture |
 
 ## How to run
 
@@ -289,11 +293,13 @@ Replay of a recorded FAST-LIO run (the results below):
 
 ```
 ros2 launch brightdrive_mapping backend_replay.launch.py [bag:=/bags/fastlio_run_20261105_133549] [rate:=2] [save_dir:=/maps]
+                                                         [save_keyframes:=true] [loop_enable:=false]
 ```
 
 The launch starts the node, plays the bag 3 s later at `rate` (the run bags were recorded at half speed and have
 no `/clock`, so rate 2 is real time), and shuts down 5 s after the bag ends, which saves the map. It also passes
-the bag path and the two git commits for `map.yaml`. `ros2 service call /mapping/save_map std_srvs/srv/Trigger`
+the bag path and the two git commits for `map.yaml`; `save_keyframes` and `loop_enable` override the YAML for one
+run (the per-keyframe PCDs for the dynamic-object filter, and the no-loop row of the table below). `ros2 service call /mapping/save_map std_srvs/srv/Trigger`
 saves mid-run without stopping.
 
 Full pipeline, FAST-LIO live on a raw CARLA bag (`/points_raw`, `/imu/data`, `/gnss/fix`, `/clock`), three
@@ -314,8 +320,9 @@ used 0.5 and lost no scan. Run this way on the same bag: 11 441 scans paired, 3 
 (twice the replay's: at half speed the 1 Hz loop thread sees every keyframe), APE 0.044 m RMSE without alignment.
 `ros2 run` knows no commits; pass `-p frontend_commit:=... -p backend_commit:=...` if `map.yaml` should carry them.
 
-Evaluation (host, evo): `evo_ape tum ground_truth_tum.txt trajectory_optimized_tum.txt -r trans_part --t_max_diff 0.005`
-without `--align`: the map is georeferenced, an alignment would hide a `T_mo` error.
+Evaluation (host, evo): `evo_ape tum ground_truth_imu_tum.txt trajectory_optimized_tum.txt -r trans_part --t_max_diff 0.005`
+without `--align`: the map is georeferenced, an alignment would hide a `T_mo` error. Trajectories are the IMU
+frame; GT is converted with `T_base_imu` before evaluation (`eval/gt_to_tum.py`, run inside the container).
 
 ## Results
 
@@ -326,34 +333,89 @@ fixes at 10 Hz with 0.3 m noise, replayed with the launch above.
 |---|---|
 | scans / paired / unsynced | 11 442 / 11 442 / 0 |
 | keyframes | 3 329 |
-| GNSS alignment | after 27 keyframes; final `T_mo` xyz (100.060, −4.469, 0.006) m, yaw −0.91° |
+| GNSS alignment | after 27 keyframes; final `T_mo` xyz (100.052, -4.467, 0.009) m, yaw -0.91° |
 | GNSS factors / dropped / residual RMS | 5 118 / 604 (no keyframe within 0.2 s, slow stretches) / (0.303, 0.301, 0.299) m |
-| loops accepted / rejected | 276 / 3 (ICP fitness median 0.04 m²) |
-| map | 4 968 191 points, 79.5 MB, saved in 2.3 s |
+| loops accepted / rejected | 273 / 5 (ICP fitness median 0.04 m²) |
+| map | 4 968 367 points, 79.5 MB, saved in 2.3 s |
 
 APE of `trajectory_optimized_tum.txt` against the CARLA ground truth, 3 329 of 3 329 keyframes matched at 1 ms,
 without `--align`:
 
 | APE | RMSE [m] | mean [m] | max [m] |
 |---|---|---|---|
-| 3-D translation | 0.047 | 0.042 | 0.190 |
-| horizontal | 0.036 | 0.031 | 0.190 |
-| z | 0.029 | 0.024 | 0.097 |
+| 3-D translation | 0.047 | 0.042 | 0.184 |
+| horizontal | 0.037 | 0.031 | 0.184 |
+| z | 0.029 | 0.024 | 0.098 |
 
-Rotation RMSE 0.125° (yaw 0.056°); the per-axis mean error is under 1 cm, so `T_mo` carries no bias. The raw
-FAST-LIO keyframes (`trajectory_fastlio_tum.txt`) are at 0.126 m RMSE and 0.333 m max against the same ground
-truth, and only after an SE(3) alignment, which they need and the optimized trajectory does not.
+Rotation RMSE 0.125° (yaw 0.056°); the per-axis mean error is under 1 cm, so `T_mo` carries no bias.
 
-## Known limitations
+What each stage contributes, same bag, all against the IMU-frame ground truth (`eval/gt_to_tum.py`), 3 329
+keyframes matched at 1 ms; APE without `--align` except the labelled row; RPE translation RMSE at `--delta 1
+--delta_unit m`:
 
-- The loop thread looks at the latest keyframe once per second, so at speed about one keyframe in six gets an
-  ICP attempt. Rejected candidates are counted, not logged with their fitness.
-- GNSS at 0.3 m pins the whole trajectory; this run cannot say what the loop closures add. Runs with
-  `loop_enable: false` and with `gnss_enable: false` (then evo with alignment) would show each term alone.
-- Everything is kept for the run: the odometry history and every keyframe cloud, no marginalization.
-  Resident memory was 0.5 GB at 1 000 keyframes and 0.8 GB at 2 400 in the run above.
-- `saveMap` holds the lock while it writes (2 to 3 s for this run); scans queue meanwhile and are processed
-  after, nothing is lost at 20 Hz with the 50-deep cloud queue.
+| Trajectory | APE 3-D RMSE / mean / max [m] | horizontal RMSE / mean / max [m] | z RMSE / mean / max [m] | RPE 1 m, translation RMSE [m] |
+|---|---|---|---|---|
+| (a) FAST-LIO only, placed in `map` with the backend's `T_mo`, no align | 0.391 / 0.349 / 0.819 | 0.169 / 0.150 / 0.391 | 0.353 / 0.297 / 0.794 | 0.014 |
+| (a) FAST-LIO only, raw, SE(3)-aligned | 0.126 / 0.105 / 0.333 | 0.122 / 0.099 / 0.333 | 0.033 / 0.023 / 0.103 | 0.014 |
+| (b) backend, `loop_enable: false`, no align | 0.059 / 0.054 / 0.196 | 0.044 / 0.039 / 0.196 | 0.039 / 0.031 / 0.129 | 0.014 |
+| (c) full backend, no align | 0.047 / 0.042 / 0.184 | 0.037 / 0.031 / 0.184 | 0.029 / 0.024 / 0.098 | 0.014 |
+
+The raw front-end drifts to 0.33 m over the two laps and, placed in the map with one rigid `T_mo`, is off by
+0.8 m at worst, mostly in z: its frame tilts and sinks with time, which one transform cannot follow. GNSS alone
+(b) pins it to 0.059 m; the loop closures (c) take a further 20 % off, most of it in z. RPE at 1 m is the same
+0.014 m for all four, as it must be: the backend moves keyframes, not the odometry between neighbours.
+
+## Dynamic objects
+
+Other road users leave streaks in a map built from a moving sensor: a car seen in three keyframes is in the map
+three times. DUFOMap ("DUFOMap: Efficient Dynamic Awareness Mapping", Duberg, Zhang, Jia, Jensfelt, RA-L 2024)
+removes them per scan: the rays of every keyframe are cast from its viewpoint into a voxel grid, and a voxel that
+rays passed through at one time but holds points at another was empty once, so those points are dynamic. Static
+structure is hit from many viewpoints and never seen through. The backend writes the per-keyframe input with
+`save_keyframes` (every cloud in `map`, its pose in the PCD `VIEWPOINT` line: the DynamicMap_Benchmark unified
+format); `scripts/dynamic_filter.py` runs DUFOMap with the published settings of its own `main.py` (resolution
+0.1 m, d_s 0.2 m, d_p 2), untuned, and writes `town03_static.pcd`, the removed points as `town03_dynamic.pcd`, and
+a top-down picture.
+
+```
+ros2 launch brightdrive_mapping backend_replay.launch.py save_keyframes:=true                  # container, /maps/keyframes
+pip install dufomap && mapping/brightdrive_mapping/scripts/dynamic_filter.py /var/tmp/brightdrive_maps   # host
+```
+
+On the run above (`sim.yaml` `mapping: {laps: 2, traffic: 10}`, ten Traffic-Manager cars near the route), 3 329
+keyframes and 26.3 M points, 78 s to integrate and 10 s to label on 20 threads:
+
+| | points | map → GT reference mean / p95 [m] | GT reference → map mean / p95 [m] |
+|---|---|---|---|
+| `town03.pcd`, every keyframe point | 4 968 367 | 0.084 / 0.251 | 0.123 / 0.364 |
+| `town03_static.pcd` | 4 953 789 (0.29 % fewer) | 0.084 / 0.252 | 0.124 / 0.368 |
+| removed, `town03_dynamic.pcd` | 26 654 cells, 215 216 raw points (0.82 %) | 0.063 / 0.145 | |
+
+Two things the numbers say. First, cloud-to-cloud distance cannot measure the removal: the GT reference
+(`eval/gt_map_builder.py`, the raw scans at ground-truth poses) contains the same ten cars at every sweep time, so
+a removed car point has a reference neighbour as well; the unchanged 0.084 m says the filter did no harm, nothing
+more. Second, the failure mode is road surface under and behind the moving cars: of the removed cells, 18 % are
+the cars themselves (hit in three keyframes or fewer, 87 % of them 0.3 to 2.5 m above the road) and 82 % are
+persistent ground within 0.3 m of the local surface, 8 to 14 m from the sensor and 72 % within 3 m of a car
+cell, where the space a car freed, inflated by d_p, reaches the road. Nothing above 2.5 m (walls, poles, trees) was
+removed and far ground is 2.5 % of it, so grazing-angle ground is not the issue here. `town03_dynamic_bev.png`
+shows the removals as streaks along the lanes the ten cars drove.
+
+## Known limitations / future work
+
+- **Ground protection before trusting the filter.** 82 % of what DUFOMap removed here is road. Label ground with
+  Patchwork++ on each keyframe cloud and keep ground-labelled points whatever DUFOMap says before merging its
+  result into the static map.
+- **The loop-detection rate depends on wall time.** The thread checks the latest keyframe at 1 Hz, so at speed
+  about one keyframe in six gets an ICP attempt and a half-speed replay finds twice as many loops (547 against 273).
+  Fix: push every new keyframe onto a queue the loop thread drains, instead of the timer.
+- **A mid-run `save_map` pauses ingest for a few seconds**: the lock is held for the batch solve and the write
+  (2 to 3 s here). Scans queue and are processed afterwards; nothing was lost at 20 Hz with the 50-deep queue.
+- Rejected loop candidates are counted, not logged with their fitness.
+- GNSS at 0.3 m pins the whole trajectory, so the loop closures' share is small (a fifth, table above); a
+  `gnss_enable: false` run, evaluated with alignment, would show the loops alone.
+- Everything is kept for the run: the odometry history and every keyframe cloud, no marginalization. Resident
+  memory was 0.5 GB at 1 000 keyframes and 0.8 GB at 2 400.
 - At 15 m/s and 20 Hz a scan advances 0.75 m, so `kf_dist` 1.0 m makes a keyframe every 1.5 m, not every metre.
 - `/mapping/path` stamps every pose with the path header's stamp; the keyframe times are in the TUM files.
 - The commits in `map.yaml` are those of the checkouts at launch time, not of the binary; rebuild after

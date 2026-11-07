@@ -66,3 +66,6 @@
     origin_frame: fastlio_origin
     map_name: town03                         # <save_dir>/<map_name>.pcd
     save_resolution: 0.2                     # m, voxel size of the saved map
+    # Also write <save_dir>/keyframes/NNNNNN.pcd per keyframe (map frame, pose in the PCD VIEWPOINT) for the
+    # dynamic-object filter (scripts/dynamic_filter.py). About 400 MB per run; off unless asked.
+    save_keyframes: false
