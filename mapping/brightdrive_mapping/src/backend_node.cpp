@@ -114,6 +114,10 @@ class BackendNode : public rclcpp::Node {
   BackendNode() : Node("mapping_backend") {
     loadParams();
     backend_ = std::make_unique<Backend>(cfg_);  // throws on a bad config
+    // Built once; every fix goes through it (gnssCallback).
+    projector_ = std::make_unique<geo::Projector>(
+        geo::parseProjection(cfg_.geo_projection), cfg_.geo_origin_lat_deg,
+        cfg_.geo_origin_lon_deg, cfg_.geo_origin_alt_m);
 
     // The three inputs share one mutually exclusive group: they are handled
     // in arrival order and never concurrently. The save service and the map
@@ -236,6 +240,10 @@ class BackendNode : public rclcpp::Node {
     cfg_.max_time_shift = requiredDouble("max_time_shift");
     cfg_.gnss_huber_k = requiredDouble("gnss_huber_k");
     cfg_.gnss_default_sigma = requiredDouble("gnss_default_sigma");
+    cfg_.geo_projection = requiredString("geo_projection");
+    cfg_.geo_origin_lat_deg = requiredDouble("geo_origin_lat_deg");
+    cfg_.geo_origin_lon_deg = requiredDouble("geo_origin_lon_deg");
+    cfg_.geo_origin_alt_m = requiredDouble("geo_origin_alt_m");
     cfg_.loop_enable = requiredBool("loop_enable");
     cfg_.loop_radius = requiredDouble("loop_radius");
     cfg_.loop_time_diff = requiredDouble("loop_time_diff");
@@ -292,6 +300,11 @@ class BackendNode : public rclcpp::Node {
                 "s, huber_k %.3f, default_sigma %.2f m",
                 c.gnss_enable, c.align_distance, c.max_time_shift,
                 c.gnss_huber_k, c.gnss_default_sigma);
+    RCLCPP_INFO(get_logger(),
+                "geo: %s, origin lat %.8f deg, lon %.8f deg, alt %.2f m "
+                "(map.yaml map.projection)",
+                c.geo_projection.c_str(), c.geo_origin_lat_deg,
+                c.geo_origin_lon_deg, c.geo_origin_alt_m);
     RCLCPP_INFO(
         get_logger(),
         "loop: enable %d, radius %.1f m, time_diff %.0f s, search_num %d, "
@@ -384,7 +397,8 @@ class BackendNode : public rclcpp::Node {
     }
     GnssFix fix;
     fix.t = rclcpp::Time(msg->header.stamp).seconds();
-    fix.p_map = geo::llaToMap(msg->latitude, msg->longitude, msg->altitude);
+    fix.p_map =
+        projector_->llaToMap(msg->latitude, msg->longitude, msg->altitude);
     // Zero cov = unknown: Backend substitutes gnss_default_sigma.
     if (msg->position_covariance_type !=
         sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN) {
@@ -495,6 +509,7 @@ class BackendNode : public rclcpp::Node {
   NodeParams np_;
   BackendConfig cfg_;
   std::unique_ptr<Backend> backend_;
+  std::unique_ptr<geo::Projector> projector_;  // lat/lon/alt -> map metres
 
   // Ingest group only.
   std::map<int64_t, Eigen::Isometry3d> odom_buf_;  // stamp [ns] -> pose

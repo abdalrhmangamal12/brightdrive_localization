@@ -131,6 +131,8 @@ classDiagram
         +prior_sigma, odom_sigma, origin_sigma : Vector6d
         +gnss_enable : bool
         +align_distance, max_time_shift, gnss_huber_k, gnss_default_sigma : double
+        +geo_projection : string
+        +geo_origin_lat_deg, geo_origin_lon_deg, geo_origin_alt_m : double
         +loop_enable : bool
         +loop_radius, loop_time_diff, loop_icp_leaf, loop_fitness : double
         +loop_search_num : int
@@ -141,14 +143,24 @@ classDiagram
     }
 
     class geo {
-        <<namespace, free functions>>
-        +llaToMap(lat_deg, lon_deg, alt_m)$ Vector3d
+        <<namespace, Eigen only>>
+        +Projection : enum SphericalMercator
+        +parseProjection(name)$ Projection
         +align4Dof(p_ant_odom : vector~Vector3d~, p_map : vector~Vector3d~)$ Isometry3d
+    }
+
+    class Projector {
+        <<geo, built once from geo_*>>
+        -type_ : Projection
+        -lat0_deg_, lon0_deg_, alt0_m_ : double
+        +llaToMap(lat_deg, lon_deg, alt_m) Vector3d
+        +mapToLla(p_map) Vector3d
     }
 
     class BackendNode {
         <<ROS 2, backend_node.cpp>>
         -backend_ : Backend
+        -projector_ : Projector
         -odom_buf_ : stamp to Isometry3d
         -pending_ : clouds waiting for odometry
         -loop_thread_ : thread
@@ -173,7 +185,8 @@ classDiagram
     Backend ..> MapSource : writes into map.yaml
     PoseGraph "1" *-- "1" Impl : pimpl, GTSAM lives here
     BackendNode "1" *-- "1" Backend : owns
-    BackendNode ..> geo : llaToMap
+    BackendNode "1" *-- "1" Projector : owns
+    BackendNode ..> Projector : llaToMap
     BackendNode ..> GnssFix : creates
     BackendNode ..> MapSource : fills from parameters
     BackendNode ..> BackendConfig : fills from parameters
@@ -183,7 +196,8 @@ classDiagram
 for `T_mo`. Prior and odometry are `PriorFactor`/`BetweenFactor<Pose3>` with diagonal sigmas, the loop factor a
 `BetweenFactor<Pose3>` under Cauchy(1.0), the GNSS factor an `ExpressionFactor<Point3>` on
 `T_mo · X_k · lever_arm` under Huber; no custom factor class. ICP, the candidate search, the voxel filter and the
-file writers are file-local functions in `backend.cpp`.
+file writers are file-local functions in `backend.cpp`. `geo` depends on Eigen alone, so a localizer can copy
+`geo.hpp`/`geo.cpp` and rebuild the map's `Projector` from `map.yaml`.
 
 ## How it works
 
@@ -194,8 +208,9 @@ carries a tight prior, so the graph frame is the odometry frame. One iSAM2 updat
 `T_corr = X_k · T_odom,k⁻¹` records how far the optimized pose has moved from the raw one. Optimized poses live
 only in the graph and are read back when needed, so nothing goes stale after a loop closure.
 
-**GNSS.** Fixes arrive in map metres (`geo::llaToMap`: Mercator, lat0 = lon0 = 0, R = 6 378 137 m, the formula
-`eval/` uses) and are buffered. After 30 m of keyframe path, `geo::align4Dof` fits x, y, z and yaw between the
+**GNSS.** The node projects every fix to map metres with one `geo::Projector`, built at startup from the
+`geo_*` keys (`SphericalMercator` at lat0 = lon0 = 0 for CARLA, the formula `eval/` uses; "map.yaml contract"
+below), and the backend buffers it. After 30 m of keyframe path, `geo::align4Dof` fits x, y, z and yaw between the
 antenna positions along the odometry (`interpolate(t_fix) · lever_arm`) and the fixes; the result becomes the
 node `G(0)` = `T_mo` (`map ← origin_frame`) with a weak prior (2° roll and pitch, loose yaw and xyz), estimated
 with the rest of the graph from then on. Each fix becomes a factor `T_mo · X_k · lever_arm = z_k` on the keyframe
@@ -224,8 +239,9 @@ exclusive callback group; the loop thread and the map timer lock only to copy an
 ## Parameters (`config/backend.yaml`)
 
 Every noise value is a sigma in GTSAM Pose3 order: rot x, y, z [rad] then trans x, y, z [m]. Backend values
-have no defaults: a missing or non-positive value stops the node at startup with the key's name. The node logs
-every value it loaded.
+have no defaults: a missing or non-positive value stops the node at startup with the key's name. The `geo_*`
+keys are the exception to "positive": required and finite, latitude in [-90, 90], longitude in [-180, 180], and
+an unknown projection name stops the node too. The node logs every value it loaded.
 
 | Name | Unit | Value | Meaning |
 |---|---|---|---|
@@ -254,6 +270,9 @@ every value it loaded.
 | `max_time_shift` | s | 0.2 | a fix farther than this from every keyframe is dropped |
 | `gnss_huber_k` | sigma | 1.345 | Huber threshold on GNSS residuals |
 | `gnss_default_sigma` | m | 0.3 | used when a NavSatFix carries no covariance |
+| `geo_projection` | | `SphericalMercator` | how lat/lon/alt becomes map xyz; written into `map.yaml` (`map.projection.type`) |
+| `geo_origin_lat_deg`, `geo_origin_lon_deg` | deg | 0.0, 0.0 | projection origin, Town03's OpenDRIVE `<geoReference>` (`+lat_0=0 +lon_0=0`) |
+| `geo_origin_alt_m` | m | 0.0 | altitude that maps to z = 0 |
 | `loop_enable` | | true | loop-closure thread |
 | `loop_radius` | m | 10.0 | candidate must be this close |
 | `loop_time_diff` | s | 30.0 | candidate must be this much older |
@@ -276,9 +295,45 @@ every value it loaded.
 | `trajectory_optimized_tum.txt` | keyframes in `map`, `t x y z qx qy qz qw`; the evo input |
 | `trajectory_fastlio_tum.txt` | the same keyframes at their raw front-end poses in `origin_frame` |
 | `loops.txt` | accepted loop closures, `cur prev fitness` |
-| `map.yaml` | source bag and commits, frames, resolution, counts, lever arm, georeference formula, `T_mo` (xyz, quaternion, yaw/pitch/roll), GNSS factors / dropped / residual RMS, alignment time, loops accepted / rejected |
+| `map.yaml` | the `map` block a localizer reads (pcd, frame, projection, resolution), then provenance and quality: `source`, `mapping` (`T_map_origin`, counts, loops), `gnss` (lever arm, factors, dropped, residual RMS, alignment time); "map.yaml contract" below |
 | `keyframes/NNNNNN.pcd` | with `save_keyframes`: every keyframe cloud in `map`, its pose in the PCD `VIEWPOINT` line (DUFOMap unified format) |
 | `town03_static.pcd`, `town03_dynamic.pcd`, `town03_dynamic_bev.png` | written by `scripts/dynamic_filter.py`: the map without dynamic objects, what it removed, and the picture |
+
+## map.yaml contract
+
+`map.yaml` has two parts. The `map` block is what a localizer reads: the file to load, its frame, how a GNSS
+fix becomes map metres, and the voxel size. Everything after it (`source`, `mapping`, `gnss`) is provenance and
+quality, useful for a report and never needed to use the map. Run c:
+
+```yaml
+map:
+  pcd: town03.pcd                  # file in the same folder as this yaml
+  frame: map
+  georeferenced: true              # false -> projection.type: Local, no origin keys
+  projection:                      # from backend.yaml geo_*
+    type: SphericalMercator
+    origin_lat_deg: 0.0
+    origin_lon_deg: 0.0
+    origin_alt_m: 0.0
+  resolution_m: 0.2
+```
+
+`SphericalMercator` is how CARLA generates lat/lon (the inverse of its `GeoLocation::Transform`). With
+R = 6 378 137 m, k = cos(lat0) and angles in radians:
+
+    x = k R (lon − lon0),   y = k R (ln tan(π/4 + lat/2) − ln tan(π/4 + lat0/2)),   z = alt − alt0
+
+Town03's OpenDRIVE `<geoReference>` is `+lat_0=0 +lon_0=0`, so k = 1 and the shifts vanish: x = R lon,
+y = R ln tan(π/4 + lat/2), z = alt. A map saved before GNSS alignment has `georeferenced: false`,
+`frame: <origin_frame>` and `projection: {type: Local}`.
+
+Same idea as Autoware's `map_projector_info.yaml`; real data = LocalCartesian (GeographicLib) at an origin inside
+the area, set in `backend.yaml`; localizer code unchanged.
+
+The rest of the file: `source` (bag, front-end and backend commits at launch time), `mapping` (`origin_frame`,
+`T_map_origin` as xyz, quaternion and roll/pitch/yaw in degrees, keyframes, path length, map points, loops
+accepted and rejected) and `gnss` (lever arm, factors, dropped, per-axis residual RMS of the final solve,
+alignment time). `T_map_origin` keeps full precision; the other numbers are rounded for reading.
 
 ## How to run
 

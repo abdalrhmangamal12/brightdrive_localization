@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -55,6 +56,15 @@ void requirePositive(const Vector6d& sigmas, const char* name) {
   for (int i = 0; i < 6; ++i) requirePositive(sigmas[i], name);
 }
 
+// !(lo <= value <= hi) also rejects NaN.
+void requireWithin(double value, double lo, double hi, const char* name) {
+  if (!(value >= lo && value <= hi)) {
+    throw std::invalid_argument(
+        std::string("BackendConfig::") + name + " must be finite and within [" +
+        std::to_string(lo) + ", " + std::to_string(hi) + "]");
+  }
+}
+
 void requireNonEmpty(const std::string& value, const char* name) {
   if (value.empty()) {
     throw std::invalid_argument(std::string("BackendConfig::") + name +
@@ -81,6 +91,15 @@ void validate(const BackendConfig& cfg) {
   requirePositive(cfg.max_time_shift, "max_time_shift");
   requirePositive(cfg.gnss_huber_k, "gnss_huber_k");
   requirePositive(cfg.gnss_default_sigma, "gnss_default_sigma");
+  // Georeference: the origin may be 0, so range checks instead of "> 0".
+  // geo::parseProjection names an unknown projection itself.
+  geo::parseProjection(cfg.geo_projection);
+  requireWithin(cfg.geo_origin_lat_deg, -90.0, 90.0, "geo_origin_lat_deg");
+  requireWithin(cfg.geo_origin_lon_deg, -180.0, 180.0, "geo_origin_lon_deg");
+  if (!std::isfinite(cfg.geo_origin_alt_m)) {
+    throw std::invalid_argument(
+        "BackendConfig::geo_origin_alt_m must be finite");
+  }
   requirePositive(cfg.loop_radius, "loop_radius");
   requirePositive(cfg.loop_time_diff, "loop_time_diff");
   if (cfg.loop_search_num < 0) {
@@ -283,6 +302,28 @@ struct MapSummary {
   MapSource source;
 };
 
+// A double with at least one decimal, so every number in map.yaml parses as
+// a float: "0.0" not "0". digits > 0: that many decimals, rounded; 0: 10
+// significant digits, the full precision the pose needs.
+std::string num(double v, int digits = 0) {
+  std::ostringstream os;
+  if (digits > 0) {
+    os << std::fixed << std::setprecision(digits) << v;
+  } else {
+    os << std::setprecision(10) << v;
+  }
+  std::string out = os.str();
+  if (out.find_first_of(".einN") == std::string::npos) out += ".0";
+  return out;
+}
+
+std::string num3(const Eigen::Vector3d& v, int digits = 0) {
+  return "[" + num(v.x(), digits) + ", " + num(v.y(), digits) + ", " +
+         num(v.z(), digits) + "]";
+}
+
+// The "map" block is the contract a localizer reads; the rest is provenance
+// and quality. Shape and an example: README.md ("map.yaml contract").
 void writeMapYaml(const std::string& path, const BackendConfig& cfg,
                   const MapSummary& s) {
   std::ofstream out(path);
@@ -295,44 +336,60 @@ void writeMapYaml(const std::string& path, const BackendConfig& cfg,
   const double roll = std::atan2(R(2, 1), R(2, 2));
   const Eigen::Quaterniond q(R);
   const Eigen::Vector3d& t = s.T_mo.translation();
-  const Eigen::Vector3d& l = cfg.lever_arm;
   const double rad2deg = 180.0 / M_PI;
-  out << std::setprecision(10);
-  out << "# Written by brightdrive_mapping backend (saveMap).\n"
-      << "source:\n"
-      << "  bag: \"" << s.source.bag << "\"\n"
-      << "  frontend_commit: \"" << s.source.frontend_commit << "\"\n"
-      << "  backend_commit: \"" << s.source.backend_commit << "\"\n"
-      << "pcd: " << cfg.map_name << ".pcd\n"
-      << "frame: " << (s.georeferenced ? cfg.map_frame : cfg.origin_frame)
+  const Eigen::Vector3d rpy_deg(roll * rad2deg, pitch * rad2deg, yaw * rad2deg);
+  // An empty provenance string stays a string, not a YAML null.
+  const auto str = [](const std::string& v) { return v.empty() ? "\"\"" : v; };
+
+  out << "# Map description, written by brightdrive_mapping backend "
+         "(saveMap).\n"
+         "# The \"map\" block is the contract read by localization. Everything "
+         "below it is provenance and quality only.\n"
+      << "map:\n"
+      << "  pcd: " << cfg.map_name << ".pcd"
+      << "                  # file in the same folder as this yaml\n"
+      << "  frame: " << (s.georeferenced ? cfg.map_frame : cfg.origin_frame)
       << "\n"
-      << "map_frame: " << cfg.map_frame << "\n"
-      << "origin_frame: " << cfg.origin_frame << "\n"
-      << "georeferenced: " << (s.georeferenced ? "true" : "false") << "\n"
-      << "resolution_m: " << cfg.save_resolution << "\n"
-      << "map_points: " << s.map_points << "\n"
-      << "keyframes: " << s.keyframes << "\n"
-      << "path_length_m: " << s.path_length << "\n"
-      << "loops_accepted: " << s.loops << "\n"
-      << "loops_rejected: " << s.loops_rejected << "\n"
+      << "  georeferenced: " << (s.georeferenced ? "true " : "false")
+      << "             # false -> projection.type: Local, no origin keys\n";
+  if (s.georeferenced) {
+    out << "  projection:                      # from backend.yaml geo_*\n"
+        << "    type: " << cfg.geo_projection << "\n"
+        << "    origin_lat_deg: " << num(cfg.geo_origin_lat_deg) << "\n"
+        << "    origin_lon_deg: " << num(cfg.geo_origin_lon_deg) << "\n"
+        << "    origin_alt_m: " << num(cfg.geo_origin_alt_m) << "\n";
+  } else {
+    out << "  projection:\n"
+        << "    type: Local\n";
+  }
+  out << "  resolution_m: " << num(cfg.save_resolution) << "\n"
+      << "\n"
+      << "source:                            # passed by the launch file\n"
+      << "  bag: " << str(s.source.bag) << "\n"
+      << "  frontend_commit: " << str(s.source.frontend_commit) << "\n"
+      << "  backend_commit: " << str(s.source.backend_commit) << "\n"
+      << "\n"
+      << "mapping:\n"
+      << "  origin_frame: " << cfg.origin_frame << "\n"
+      << "  T_map_origin:                    # " << cfg.map_frame << " <- "
+      << cfg.origin_frame << ", full precision\n"
+      << "    xyz_m: " << num3(t) << "\n"
+      << "    quaternion_xyzw: [" << num(q.x()) << ", " << num(q.y()) << ", "
+      << num(q.z()) << ", " << num(q.w()) << "]\n"
+      << "    rpy_deg: " << num3(rpy_deg, 4) << "\n"
+      << "  keyframes: " << s.keyframes << "\n"
+      << "  path_length_m: " << num(s.path_length, 2) << "\n"
+      << "  map_points: " << s.map_points << "\n"
+      << "  loops: {accepted: " << s.loops << ", rejected: " << s.loops_rejected
+      << "}\n"
+      << "\n"
       << "gnss:\n"
-      << "  enabled: " << (cfg.gnss_enable ? "true" : "false") << "\n"
-      << "  lever_arm_m: [" << l.x() << ", " << l.y() << ", " << l.z() << "]\n"
-      << "  georeference: \"x = R lon, y = R ln tan(pi/4 + lat/2), z = alt; "
-         "lat0 = lon0 = 0; R = 6378137 m\"\n"
+      << "  lever_arm_m: " << num3(cfg.lever_arm) << "\n"
       << "  factors: " << s.gnss_factors << "\n"
       << "  dropped: " << s.gnss_dropped << "\n"
-      << "  residual_rms_m: [" << s.gnss_residual_rms.x() << ", "
-      << s.gnss_residual_rms.y() << ", " << s.gnss_residual_rms.z() << "]\n"
-      << "  aligned_at_t: " << s.align_time << "\n"
-      << "T_map_origin:  # " << cfg.map_frame << " <- " << cfg.origin_frame
-      << "\n"
-      << "  xyz_m: [" << t.x() << ", " << t.y() << ", " << t.z() << "]\n"
-      << "  quaternion_xyzw: [" << q.x() << ", " << q.y() << ", " << q.z()
-      << ", " << q.w() << "]\n"
-      << "  yaw_deg: " << yaw * rad2deg << "\n"
-      << "  pitch_deg: " << pitch * rad2deg << "\n"
-      << "  roll_deg: " << roll * rad2deg << "\n";
+      << "  residual_rms_m: " << num3(s.gnss_residual_rms, 3)
+      << "   # final solve, per axis; compare with the GNSS sigma\n"
+      << "  aligned_at_t: " << num(s.align_time, 2) << "\n";
 }
 
 }  // namespace

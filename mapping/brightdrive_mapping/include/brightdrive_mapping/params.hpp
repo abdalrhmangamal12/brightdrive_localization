@@ -4,6 +4,7 @@
 #pragma once
 
 #include <Eigen/Core>
+#include <limits>
 #include <string>
 
 #include "brightdrive_mapping/types.hpp"  // Vector6d
@@ -37,6 +38,15 @@ struct BackendConfig {
   double max_time_shift = 0.0;  // fix-to-keyframe time gap, else dropped [s]
   double gnss_huber_k = 0.0;    // Huber threshold [sigmas]
   double gnss_default_sigma = 0.0;  // when the fix has no covariance [m]
+  // Georeference: how a fix's lat/lon/alt becomes map x/y/z (geo::Projector),
+  // written into map.yaml (map.projection) so a localizer rebuilds it. Not
+  // under the "> 0" rule: the origin may be 0 (CARLA Town03). Required all
+  // the same: NaN means missing and fails validation; lat in [-90, 90], lon
+  // in [-180, 180], alt finite.
+  std::string geo_projection;  // geo::parseProjection names a bad value
+  double geo_origin_lat_deg = std::numeric_limits<double>::quiet_NaN();
+  double geo_origin_lon_deg = std::numeric_limits<double>::quiet_NaN();
+  double geo_origin_alt_m = std::numeric_limits<double>::quiet_NaN();
 
   // Loop closure.
   bool loop_enable = true;

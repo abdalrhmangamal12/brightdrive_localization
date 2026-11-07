@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace brightdrive_mapping::geo {
 
@@ -10,14 +11,69 @@ namespace {
 // WGS-84 equatorial radius [m]; CARLA's geo-reference uses it as a sphere.
 constexpr double kEarthRadius = 6378137.0;
 constexpr double kDegToRad = M_PI / 180.0;
+constexpr double kRadToDeg = 180.0 / M_PI;
+
+double mercatorY(double lat_rad) {
+  return std::log(std::tan(M_PI / 4.0 + lat_rad / 2.0));
+}
+
+// !(lo <= v <= hi) also rejects NaN.
+void requireWithin(double v, double lo, double hi, const char* what) {
+  if (!(v >= lo && v <= hi)) {
+    throw std::invalid_argument(std::string("geo::Projector: origin ") + what +
+                                " must be finite and within [" +
+                                std::to_string(lo) + ", " + std::to_string(hi) +
+                                "]");
+  }
+}
 }  // namespace
 
-Eigen::Vector3d llaToMap(double lat_deg, double lon_deg, double alt_m) {
+Projection parseProjection(const std::string& name) {
+  if (name == "SphericalMercator") return Projection::SphericalMercator;
+  throw std::invalid_argument("geo: unknown projection '" + name +
+                              "' (known: SphericalMercator)");
+}
+
+const char* projectionName(Projection p) {
+  switch (p) {
+    case Projection::SphericalMercator:
+      return "SphericalMercator";
+  }
+  return "?";
+}
+
+Projector::Projector(Projection type, double origin_lat_deg,
+                     double origin_lon_deg, double origin_alt_m)
+    : type_(type),
+      lat0_deg_(origin_lat_deg),
+      lon0_deg_(origin_lon_deg),
+      alt0_m_(origin_alt_m) {
+  requireWithin(origin_lat_deg, -90.0, 90.0, "latitude [deg]");
+  requireWithin(origin_lon_deg, -180.0, 180.0, "longitude [deg]");
+  if (!std::isfinite(origin_alt_m)) {
+    throw std::invalid_argument(
+        "geo::Projector: origin altitude [m] must be finite");
+  }
+  scale_ = std::cos(origin_lat_deg * kDegToRad);
+  merc_y0_ = mercatorY(origin_lat_deg * kDegToRad);
+}
+
+Eigen::Vector3d Projector::llaToMap(double lat_deg, double lon_deg,
+                                    double alt_m) const {
   const double lat = lat_deg * kDegToRad;
   const double lon = lon_deg * kDegToRad;
-  return Eigen::Vector3d(
-      kEarthRadius * lon,
-      kEarthRadius * std::log(std::tan(M_PI / 4.0 + lat / 2.0)), alt_m);
+  const double lon0 = lon0_deg_ * kDegToRad;
+  return Eigen::Vector3d(scale_ * kEarthRadius * (lon - lon0),
+                         scale_ * kEarthRadius * (mercatorY(lat) - merc_y0_),
+                         alt_m - alt0_m_);
+}
+
+Eigen::Vector3d Projector::mapToLla(const Eigen::Vector3d& p) const {
+  const double kR = scale_ * kEarthRadius;
+  const double lon = lon0_deg_ * kDegToRad + p.x() / kR;
+  const double lat =
+      2.0 * std::atan(std::exp(p.y() / kR + merc_y0_)) - M_PI / 2.0;
+  return Eigen::Vector3d(lat * kRadToDeg, lon * kRadToDeg, p.z() + alt0_m_);
 }
 
 Eigen::Isometry3d align4Dof(const std::vector<Eigen::Vector3d>& p_odom,
