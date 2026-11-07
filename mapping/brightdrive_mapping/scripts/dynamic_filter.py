@@ -10,7 +10,9 @@ and nothing is tuned here; the keyframe clouds are already range-cropped by the 
 not repeated.
 
 Output in <save_dir>: <map>_static.pcd (the points labelled static, voxelised like the backend's map),
-<map>_dynamic.pcd (what was removed), <map>_dynamic_bev.png (top-down, removed points in red), and the counts.
+<map>_static.yaml (the map.yaml of the static map: the backend's file with map.pcd pointing at the static file
+and a dynamic_filter block), <map>_dynamic.pcd (what was removed), <map>_dynamic_bev.png (top-down, removed
+points in red), and the counts.
 
   pip install dufomap                       # host python; the mapping container has no dufomap
   mapping/brightdrive_mapping/scripts/dynamic_filter.py <save_dir> [--map-name town03] [--voxel 0.2] [--threads 0] [--no-image]
@@ -77,6 +79,35 @@ def write_pcd(path, xyzi, comment):
     with open(path, 'wb') as f:
         f.write(header.encode())
         f.write(rec.tobytes())
+
+
+def write_static_yaml(save_dir, map_name, removed_fraction, voxel):
+    """<map>_static.yaml = <save_dir>/map.yaml with map.pcd pointing at the static map, plus a dynamic_filter
+    block. A text copy, so the comments and the order of the backend's file survive. None when map.yaml is absent."""
+    src = os.path.join(save_dir, 'map.yaml')
+    dst = os.path.join(save_dir, f'{map_name}_static.yaml')
+    if not os.path.exists(src):
+        print(f'no {src}: {dst} not written')
+        return None
+    out, replaced = [], False
+    with open(src) as f:
+        for line in f.read().splitlines():
+            if line.startswith('  pcd: ') and not replaced:
+                comment = line.partition('#')[2]
+                line = f'  pcd: {map_name}_static.pcd'.ljust(35) + (f'#{comment}' if comment else '')
+                replaced = True
+            out.append(line)
+    if not replaced:
+        raise SystemExit(f'{src}: no "  pcd:" line in the map block')
+    out += ['',
+            'dynamic_filter:                    # scripts/dynamic_filter.py',
+            '  method: DUFOMap',
+            f'  params: {{resolution_m: {RESOLUTION_M}, d_s_m: {D_S_M}, d_p: {D_P}}}',
+            f'  removed_fraction: {removed_fraction:.4f}         # {voxel} m voxels of the input that are gone',
+            f'  input: {map_name}.pcd']
+    with open(dst, 'w') as f:
+        f.write('\n'.join(out) + '\n')
+    return dst
 
 
 def voxel_centroids(xyzi, voxel):
@@ -155,6 +186,8 @@ def main():
         write_pcd(dynamic_path, dynamic_vox, 'points DUFOMap removed as dynamic (brightdrive_mapping/scripts/dynamic_filter.py)')
     if not args.no_image:
         bev_image(os.path.join(args.save_dir, f'{args.map_name}_dynamic_bev.png'), static_vox, dynamic_vox)
+    removed_fraction = (len(full_vox) - len(static_vox)) / max(1, len(full_vox))
+    yaml_path = write_static_yaml(args.save_dir, args.map_name, removed_fraction, args.voxel)
 
     print(f'{len(files)} keyframes, {n_all:,} points; DUFOMap(resolution {RESOLUTION_M}, d_s {D_S_M}, d_p {D_P}) '
           f'integrated in {t_int:.0f} s, labelled in {time.time() - t0 - t_int:.0f} s')
@@ -163,7 +196,8 @@ def main():
     print(f'at {args.voxel} m voxels: full map {len(full_vox):,}, static {len(static_vox):,} '
           f'({100.0 * (len(full_vox) - len(static_vox)) / max(1, len(full_vox)):.2f} % fewer), '
           f'removed {len(dynamic_vox):,}')
-    print(f'wrote {static_path}' + (f', {dynamic_path}' if len(dynamic_vox) else ''))
+    print(f'wrote {static_path}' + (f', {yaml_path}' if yaml_path else '')
+          + (f', {dynamic_path}' if len(dynamic_vox) else ''))
 
 
 if __name__ == '__main__':

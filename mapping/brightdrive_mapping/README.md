@@ -297,7 +297,7 @@ an unknown projection name stops the node too. The node logs every value it load
 | `loops.txt` | accepted loop closures, `cur prev fitness` |
 | `map.yaml` | the `map` block a localizer reads (pcd, frame, projection, resolution), then provenance and quality: `source`, `mapping` (`T_map_origin`, counts, loops), `gnss` (lever arm, factors, dropped, residual RMS, alignment time); "map.yaml contract" below |
 | `keyframes/NNNNNN.pcd` | with `save_keyframes`: every keyframe cloud in `map`, its pose in the PCD `VIEWPOINT` line (DUFOMap unified format) |
-| `town03_static.pcd`, `town03_dynamic.pcd`, `town03_dynamic_bev.png` | written by `scripts/dynamic_filter.py`: the map without dynamic objects, what it removed, and the picture |
+| `town03_static.pcd`, `town03_static.yaml`, `town03_dynamic.pcd`, `town03_dynamic_bev.png` | written by `scripts/dynamic_filter.py`: the map without dynamic objects, its `map.yaml` (same contract, `pcd` points at the static file, plus a `dynamic_filter` block), what it removed, and the picture |
 
 ## map.yaml contract
 
