@@ -61,6 +61,18 @@ struct MapInfo {
   double resolution_m = 0.0;
 };
 
+// One pose of the IMU in the map frame at time t [s].
+struct PoseSample {
+  double t = 0.0;
+  Eigen::Isometry3d T_map_imu = Eigen::Isometry3d::Identity();
+};
+
+// Pose at t between a (a.t <= t) and b (b.t >= t): position linear, rotation
+// slerp. The motion between two IMU samples (10 ms) is close to a constant
+// twist, for which this is exact to first order. a.t == b.t returns a.
+Eigen::Isometry3d interpolatePose(const PoseSample& a, const PoseSample& b,
+                                  double t);
+
 enum class Lifecycle { kWaitData, kInitializing, kTracking };
 enum class Health { kNominal, kDegraded, kDeadReckoning, kFailed };
 

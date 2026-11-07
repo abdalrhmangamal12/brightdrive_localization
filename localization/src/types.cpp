@@ -13,6 +13,20 @@ double Scan::tMax() const {
   return time.empty() ? t_stamp : *std::max_element(time.begin(), time.end());
 }
 
+Eigen::Isometry3d interpolatePose(const PoseSample& a, const PoseSample& b,
+                                  double t) {
+  const double span = b.t - a.t;
+  if (!(span > 0.0)) return a.T_map_imu;
+  const double s = std::clamp((t - a.t) / span, 0.0, 1.0);
+  Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
+  T.translation() =
+      (1.0 - s) * a.T_map_imu.translation() + s * b.T_map_imu.translation();
+  T.linear() = Eigen::Quaterniond(a.T_map_imu.linear())
+                   .slerp(s, Eigen::Quaterniond(b.T_map_imu.linear()))
+                   .toRotationMatrix();
+  return T;
+}
+
 const char* toString(Lifecycle s) {
   switch (s) {
     case Lifecycle::kWaitData:
