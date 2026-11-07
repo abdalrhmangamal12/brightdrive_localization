@@ -15,6 +15,8 @@ CARLA 0.9.15 server and a ROS 2 Humble client, both in Docker: `compose.yaml` (a
 the NVIDIA container runtime (`docker info | grep -i runtimes` lists `nvidia`), an NVIDIA driver (580.x here) and
 the server image (`docker pull carlasim/carla:0.9.15`, 21 GB).
 
+.env holds local defaults (UID/GID, ROS domain, bag and map folders); adjust them for your machine.
+
 | Service | What |
 |---|---|
 | `carla-server` | `carlasim/carla:0.9.15` pinned by digest, GPU through the `nvidia` runtime, host network, `-RenderOffScreen -quality-level=Epic`, starts in Town03 (`docker/UserEngine.ini`), healthcheck on the RPC port 2000 |
