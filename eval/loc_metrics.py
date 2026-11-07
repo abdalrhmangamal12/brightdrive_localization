@@ -71,6 +71,12 @@ def yaw_of(q):
     return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
 
 
+def level(status):
+    """DiagnosticStatus.level as an int (rclpy gives the byte field as bytes)."""
+    v = status.level
+    return v[0] if isinstance(v, (bytes, bytearray)) else int(v)
+
+
 def stamp(h):
     return h.stamp.sec + h.stamp.nanosec * 1e-9
 
@@ -203,12 +209,19 @@ def main():
     # Latency on the recorder's clock: pose receive minus IMU receive for the same stamp.
     imu_recv = {round(stamp(i.header), 6): t for t, i in m['/imu/data']}
     lat_ms = [1e3 * (r[1] - imu_recv[round(r[0], 6)]) for r in est if round(r[0], 6) in imu_recv]
-    status = [(stamp(a.header), {kv.key: kv.value for kv in a.status[0].values}, a.status[0].level)
+    status = [(stamp(a.header), {kv.key: kv.value for kv in a.status[0].values}, level(a.status[0]))
               for _, a in m['/localization/status'] if a.status]
     proc = [float(v['output_latency_ms']) for _, v, _ in status if v.get('output_latency_ms') not in (None, '-')]
-    res['latency_ms'] = {'end_to_end': q_stats(lat_ms), 'processing_max_reported':
+    # A recorder on sim time (run.sh records with --use-sim-time) stamps on the 10 ms /clock grid: its receive
+    # times cannot resolve a sub-millisecond latency. Then the node's own measurement is the latency figure.
+    lat_arr = np.asarray(lat_ms)
+    sim_clock = lat_arr.size > 0 and np.mean(np.abs(np.round(lat_arr / 10.0) * 10.0 - lat_arr) < 1e-3) > 0.9
+    res['latency_ms'] = {'end_to_end': q_stats(lat_ms), 'recorder_clock': 'sim (10 ms steps)' if sim_clock
+                         else 'wall', 'processing_max_reported':
                          max((float(v.get('output_latency_max_ms', 0)) for _, v, _ in status), default=None),
-                         'processing_last': q_stats(proc)}
+                         'processing': q_stats(proc)}
+    res['latency_ms']['for_check'] = (res['latency_ms']['processing'].get('p99') if sim_clock
+                                      else res['latency_ms']['end_to_end'].get('p99'))
 
     # Per-sweep stream: [t_ref, time_ms, inliers, source, ratio, e/inl, nis, accepted, code, age_ms]
     mt = np.array([list(a.data) for _, a in m['/localization/debug/match']]) if m['/localization/debug/match'] \
@@ -235,7 +248,7 @@ def main():
         res['inlier_ratio'] = q_stats(track[codes == 0, 4])
     if status:
         last = status[-1][1]
-        res['status_last'] = {k: last[k] for k in last if k.startswith(('gnss.', 'sweeps_', 'start', 'match.'))}
+        res['status_last'] = {k: last[k] for k in last if k.startswith(('gnss.', 'sweeps_', 'init', 'time_to_tracking', 'failures', 'last_fail', 'match.'))}
         st_t = np.array([s[0] for s in status])
         labels = [s[1].get('lifecycle', '?') + (' ' + s[1].get('health', '') if s[1].get('lifecycle') ==
                                                  'TRACKING' else '') for s in status]
@@ -246,7 +259,7 @@ def main():
     # Scenario sections.
     outage = None
     if m['/eval/gnss_outage']:
-        warn = [stamp(a.header) for _, a in m['/eval/gnss_outage'] if a.status and a.status[0].level == 1]
+        warn = [stamp(a.header) for _, a in m['/eval/gnss_outage'] if a.status and level(a.status[0]) == 1]
         if warn:
             outage = (min(warn), max(warn))
     if outage and status:
@@ -262,8 +275,11 @@ def main():
                               'recovery_to_nominal_s': float(after[0] - te) if after else None}
     if args.scenario == 'relocalization':
         off = m['/eval/init_offset'][0][1] if m['/eval/init_offset'] else None
+        last = e_t >= e_t[-1] - 10.0
         res['relocalization'] = {'init_offset_m': float(math.hypot(off.vector.x, off.vector.y)) if off else None,
-                                 'init_heading_offset_deg': float(off.vector.z) if off else None}
+                                 'init_heading_offset_deg': float(off.vector.z) if off else None,
+                                 'final_10s_horizontal_m': q_stats(horiz[last]),
+                                 'final_10s_heading_deg': q_stats(head[last])}
     speed = np.linalg.norm(gt_v[:, :2], axis=1)
     sp_e = np.interp(e_t, gt_t, speed)
     yr_e = np.interp(e_t, gt_t, gt_w)
@@ -292,7 +308,8 @@ def main():
     else:
         check('heading p95 [deg]', e['heading_deg'].get('p95'), 'heading_p95_deg')
     check('horizontal max [m]', e['horizontal_m'].get('max'), 'horizontal_max_m')
-    check('latency p99 [ms]', res['latency_ms']['end_to_end'].get('p99'), 'latency_p99_ms')
+    check('latency p99 [ms]' + (' (node-measured, sim-time recorder)' if res['latency_ms']['recorder_clock']
+                                 != 'wall' else ''), res['latency_ms']['for_check'], 'latency_p99_ms')
     if 'gnss_outage' in res:
         g = res['gnss_outage']
         check('outage peak drift [m]', g['peak_drift_m'], 'outage_peak_drift_m')

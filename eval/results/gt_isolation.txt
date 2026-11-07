@@ -1,0 +1,39 @@
+# ros2 node info /localization_node (2026-11-07T14:37:13Z, live gnss_outage run)
+/localization_node
+  Subscribers:
+    /clock: rosgraph_msgs/msg/Clock
+    /gnss/fix_gated: sensor_msgs/msg/NavSatFix
+    /imu/data: sensor_msgs/msg/Imu
+    /initialpose: geometry_msgs/msg/PoseWithCovarianceStamped
+    /parameter_events: rcl_interfaces/msg/ParameterEvent
+    /points_raw: sensor_msgs/msg/PointCloud2
+  Publishers:
+    /localization/debug/aligned_scan: sensor_msgs/msg/PointCloud2
+    /localization/debug/deskewed_cloud: sensor_msgs/msg/PointCloud2
+    /localization/debug/health: std_msgs/msg/Float64MultiArray
+    /localization/debug/match: std_msgs/msg/Float64MultiArray
+    /localization/map: sensor_msgs/msg/PointCloud2
+    /localization/odometry: nav_msgs/msg/Odometry
+    /localization/path: nav_msgs/msg/Path
+    /localization/pose: geometry_msgs/msg/PoseWithCovarianceStamped
+    /localization/status: diagnostic_msgs/msg/DiagnosticArray
+    /localization/velocity: geometry_msgs/msg/TwistWithCovarianceStamped
+    /parameter_events: rcl_interfaces/msg/ParameterEvent
+    /rosout: rcl_interfaces/msg/Log
+    /tf: tf2_msgs/msg/TFMessage
+  Service Servers:
+    /localization_node/describe_parameters: rcl_interfaces/srv/DescribeParameters
+    /localization_node/get_parameter_types: rcl_interfaces/srv/GetParameterTypes
+    /localization_node/get_parameters: rcl_interfaces/srv/GetParameters
+    /localization_node/list_parameters: rcl_interfaces/srv/ListParameters
+    /localization_node/set_parameters: rcl_interfaces/srv/SetParameters
+    /localization_node/set_parameters_atomically: rcl_interfaces/srv/SetParametersAtomically
+  Service Clients:
+
+  Action Servers:
+
+  Action Clients:
+
+
+# subscriptions containing /eval:
+0
