@@ -1,20 +1,21 @@
 // match_bag: the scan matcher alone, against ground truth, on a recorded bag.
 //
 // For every N-th sweep: the GT pose at the sweep's reference time gives
-// T_map_lidar; the sweep is deskewed with GT poses (one rigid transform per
-// distinct point time), preprocessed once, then aligned from the true pose
-// perturbed by d metres (random horizontal direction) and a degrees (yaw,
-// random sign) for every --perturb case. Reports convergence, success
-// (position < 0.3 m and yaw < 1 deg), error quantiles and timing per case,
-// plus the map load and voxel-map build times.
+// T_map_lidar; the sweep is deskewed with GT poses through the package's
+// Deskewer, preprocessed once, then aligned from the true pose perturbed by
+// d metres (random horizontal direction) and a degrees (yaw, random sign) for
+// every --perturb case. Reports convergence, success (position < 0.3 m and
+// yaw < 1 deg), error quantiles and timing per case, plus the map load and
+// voxel-map build times.
 //
-//   ros2 run brightdrive_localization match_bag --bag /bags/<bag> --params
-//   <localization.yaml>
-//       [--map-yaml <map.yaml>] [--perturb 0.5:2 --perturb 1:5 --perturb 3:15]
-//       [--every 5]
-//       [--deskew gt|off] [--coarse-from 3.0] [--seed 1] [--csv out.csv]
+//   ros2 run brightdrive_localization match_bag
+//     --bag /bags/<bag> --params <localization.yaml> [--map-yaml <map.yaml>]
+//     [--perturb 0.5:2 --perturb 1:5 --perturb 3:15] [--every 5]
+//     [--deskew gt|off] [--coarse-from 3.0] [--min-speed 0] [--seed 1]
+//     [--csv out.csv]
 //
 // --coarse-from d: cases with d >= this value are also run coarse -> fine.
+// --min-speed v: only sweeps where the ground-truth speed is >= v [m/s].
 #include <Eigen/Geometry>
 #include <algorithm>
 #include <chrono>
@@ -36,6 +37,7 @@
 #include <vector>
 
 #include "brightdrive_localization/config_yaml.hpp"
+#include "brightdrive_localization/deskewer.hpp"
 #include "brightdrive_localization/map_io.hpp"
 #include "brightdrive_localization/ros_conversions.hpp"
 #include "brightdrive_localization/scan_matcher.hpp"
@@ -58,6 +60,7 @@ struct Args {
   int every = 5;
   bool deskew = true;
   double coarse_from = 3.0;
+  double min_speed = 0.0;
   unsigned seed = 1;
   std::string csv;
   std::string gt_topic = "/eval/ground_truth";
@@ -86,6 +89,8 @@ Args parseArgs(int argc, char** argv) {
       a.csv = next();
     else if (k == "--coarse-from")
       a.coarse_from = std::stod(next());
+    else if (k == "--min-speed")
+      a.min_speed = std::stod(next());
     else if (k == "--gt-topic")
       a.gt_topic = next();
     else if (k == "--points-topic")
@@ -128,6 +133,25 @@ class GtTrajectory {
     return !poses_.empty() && t >= poses_.begin()->first &&
            t <= poses_.rbegin()->first;
   }
+  // GT samples covering [t0, t1] as IMU poses, for the Deskewer.
+  std::vector<bl::PoseSample> covering(
+      double t0, double t1, const Eigen::Isometry3d& T_base_imu) const {
+    std::vector<bl::PoseSample> out;
+    auto first = poses_.upper_bound(t0);
+    if (first != poses_.begin()) --first;
+    auto last = poses_.lower_bound(t1);
+    if (last == poses_.end()) --last;
+    for (auto it = first;; ++it) {
+      out.push_back({it->first, it->second * T_base_imu});
+      if (it == last) break;
+    }
+    return out;
+  }
+  // Speed from positions 0.05 s either side [m/s].
+  double speedAt(double t) const {
+    return (at(t + 0.05).translation() - at(t - 0.05).translation()).norm() /
+           0.1;
+  }
   Eigen::Isometry3d at(double t) const {
     auto hi = poses_.lower_bound(t);
     if (hi == poses_.end()) return poses_.rbegin()->second;
@@ -146,25 +170,6 @@ class GtTrajectory {
  private:
   std::map<double, Eigen::Isometry3d> poses_;
 };
-
-// Every point moves into the lidar frame at t_ref = max(time) with
-// T_rel(t) = T_ml(t_ref)^-1 T_ml(t): one transform per distinct point time.
-void deskewWithGt(bl::Scan& scan, const GtTrajectory& gt,
-                  const Eigen::Isometry3d& T_base_lidar) {
-  const double t_ref = scan.tMax();
-  const Eigen::Isometry3d T_ref_inv = (gt.at(t_ref) * T_base_lidar).inverse();
-  std::unordered_map<int64_t, Eigen::Isometry3d> rel;
-  for (size_t i = 0; i < scan.size(); ++i) {
-    const int64_t key = std::llround(scan.time[i] * 1e7);  // 0.1 us buckets
-    auto it = rel.find(key);
-    if (it == rel.end()) {
-      it = rel.emplace(key, T_ref_inv * gt.at(scan.time[i]) * T_base_lidar)
-               .first;
-    }
-    scan.points[i] = it->second * scan.points[i];
-    scan.points[i].w() = 1.0;
-  }
-}
 
 struct Sample {
   double t_ref;
@@ -263,6 +268,8 @@ int main(int argc, char** argv) {
   const double load_s =
       std::chrono::duration<double>(Clock::now() - t0).count();
   bl::ScanMatcher matcher(cfg.matcher);
+  const bl::Deskewer deskewer(cfg.extrinsics.T_base_imu.inverse() *
+                              cfg.extrinsics.T_base_lidar);
   matcher.setMap(map_points);
   const auto& ms = matcher.mapStats();
   std::printf(
@@ -303,7 +310,7 @@ int main(int argc, char** argv) {
   std::vector<Sample> samples;
   std::vector<double> prep_ms;
   std::vector<double> src_pts;
-  size_t sweeps = 0, used = 0, skipped_gt = 0;
+  size_t sweeps = 0, used = 0, skipped_gt = 0, skipped_slow = 0;
   std::ofstream csv;
   if (!args.csv.empty()) {
     csv.open(args.csv);
@@ -331,9 +338,18 @@ int main(int argc, char** argv) {
         continue;
       }
       const double t_ref = scan.tMax();
+      if (args.min_speed > 0.0 && gt.speedAt(t_ref) < args.min_speed) {
+        ++skipped_slow;
+        continue;
+      }
       const Eigen::Isometry3d T_true =
           gt.at(t_ref) * cfg.extrinsics.T_base_lidar;
-      if (args.deskew) deskewWithGt(scan, gt, cfg.extrinsics.T_base_lidar);
+      if (args.deskew &&
+          !deskewer.apply(scan, gt.covering(scan.tMin(), t_ref,
+                                            cfg.extrinsics.T_base_imu))) {
+        ++skipped_gt;
+        continue;
+      }
 
       const auto tp = Clock::now();
       const auto source = matcher.preprocess(scan);
@@ -379,6 +395,10 @@ int main(int argc, char** argv) {
     }
   }
 
+  if (args.min_speed > 0.0) {
+    std::printf("min speed %.1f m/s: %zu sampled sweeps were slower\n",
+                args.min_speed, skipped_slow);
+  }
   std::printf(
       "sweeps: %zu in the bag, every %d -> %zu used, %zu without GT coverage; "
       "deskew %s; "
