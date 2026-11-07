@@ -1,0 +1,274 @@
+{
+  "configById": {
+    "3D!localization": {
+      "cameraState": {
+        "distance": 80,
+        "perspective": true,
+        "phi": 55,
+        "thetaOffset": 45,
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "transforms": {
+          "showLabel": true,
+          "axisScale": 3
+        }
+      },
+      "transforms": {},
+      "topics": {
+        "/localization/map": {
+          "visible": true,
+          "pointSize": 1.5,
+          "colorMode": "colormap",
+          "colorMap": "turbo",
+          "colorField": "z",
+          "decayTime": 0
+        },
+        "/localization/debug/aligned_scan": {
+          "visible": true,
+          "pointSize": 3,
+          "colorMode": "flat",
+          "flatColor": "#ffaa00ff",
+          "decayTime": 0
+        },
+        "/localization/pose": {
+          "visible": true,
+          "type": "arrow",
+          "arrowScale": [
+            3,
+            0.4,
+            0.4
+          ],
+          "showCovariance": true,
+          "covarianceColor": "#00c8ff66",
+          "color": "#00c8ffff"
+        },
+        "/localization/path": {
+          "visible": true,
+          "lineWidth": 0.2,
+          "gradient": [
+            "#00ff78ff",
+            "#00ff78ff"
+          ]
+        },
+        "/localization/odometry": {
+          "visible": false
+        }
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "frameLocked": true,
+          "label": "Grid",
+          "instanceId": "grid",
+          "size": 400,
+          "divisions": 40,
+          "lineWidth": 1,
+          "color": "#5a5a5aff",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "publish": {
+        "type": "pose_estimate",
+        "poseTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26
+      },
+      "imageMode": {}
+    },
+    "Plot!health": {
+      "title": "health (0 nominal, 1 degraded, 2 dead reckoning, 3 failed) / lifecycle (0 wait, 1 init, 2 tracking)",
+      "paths": [
+        {
+          "value": "/localization/debug/health.data[1]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "health"
+        },
+        {
+          "value": "/localization/debug/health.data[0]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "lifecycle"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!nis": {
+      "title": "pose NIS (gate 22.46)",
+      "paths": [
+        {
+          "value": "/localization/debug/health.data[4]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "nis_pose"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!epi": {
+      "title": "error per inlier (limit 0.12)",
+      "paths": [
+        {
+          "value": "/localization/debug/health.data[5]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "error_per_inlier"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!sigma": {
+      "title": "sigma_pos_m",
+      "paths": [
+        {
+          "value": "/localization/debug/health.data[2]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "sigma_pos_m"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!gnss": {
+      "title": "gnss_age_s",
+      "paths": [
+        {
+          "value": "/localization/debug/health.data[3]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "gnss_age_s"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!age": {
+      "title": "match_age_ms",
+      "paths": [
+        {
+          "value": "/localization/debug/health.data[6]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "match_age_ms"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "DiagnosticSummary!status": {
+      "minLevel": 0,
+      "pinnedIds": [],
+      "hardwareIdFilter": "",
+      "topicToRender": "/localization/status",
+      "sortByLevel": true
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "direction": "row",
+    "splitPercentage": 55,
+    "first": {
+      "direction": "column",
+      "splitPercentage": 75,
+      "first": "3D!localization",
+      "second": "DiagnosticSummary!status"
+    },
+    "second": {
+      "direction": "column",
+      "first": {
+        "direction": "column",
+        "first": "Plot!health",
+        "second": {
+          "direction": "column",
+          "first": "Plot!nis",
+          "second": "Plot!epi"
+        }
+      },
+      "second": {
+        "direction": "column",
+        "first": "Plot!sigma",
+        "second": {
+          "direction": "column",
+          "first": "Plot!gnss",
+          "second": "Plot!age"
+        }
+      }
+    }
+  }
+}
