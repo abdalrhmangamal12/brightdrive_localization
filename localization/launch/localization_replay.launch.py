@@ -27,6 +27,12 @@ RECORD_TOPICS = ['/localization/pose', '/localization/velocity', '/localization/
                  '/eval/init_offset', '/initialpose']
 
 
+# What a replay plays: the sensors, the clock and the evaluation topics. A bag recorded during a live run also holds
+# that run's /localization/* and /tf; playing them would put two localizers' outputs on the same topics.
+PLAY_TOPICS = ['/clock', '/imu/data', '/gnss/fix', '/gnss/fix_gated', '/points_raw', '/tf_static', '/initialpose',
+               '/eval/ground_truth', '/eval/gnss_outage', '/eval/init_offset']
+
+
 def recorder(context):
     out = context.perform_substitution(LaunchConfiguration('record'))
     if not out:
@@ -46,7 +52,7 @@ def generate_launch_description():
     )
     play = ExecuteProcess(
         cmd=['ros2', 'bag', 'play', LaunchConfiguration('bag'), '--rate', LaunchConfiguration('rate'),
-             '--disable-keyboard-controls'],
+             '--disable-keyboard-controls', '--topics'] + PLAY_TOPICS,
         name='play', output='screen',
     )
     on_bag_end = RegisterEventHandler(OnProcessExit(
