@@ -77,8 +77,11 @@ RUN python3 -c "import carla, numpy; from importlib.metadata import version; \
 
 # ---------------------------------------------------------------------------
 FROM base AS loc
-# TODO estimator deps (loc_ros). libgeographic-dev among them: the localizer copies mapping's geo.hpp/geo.cpp
-# (GeographicLib::LocalCartesian) to rebuild a map's projector from map.yaml.
+# GeographicLib: the localizer copies mapping's geo.hpp/geo.cpp (GeographicLib::LocalCartesian) to rebuild a
+# map's projector from map.yaml. The rest of the estimator's deps (loc_ros) are still to come.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgeographic-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
 FROM base AS mapping
