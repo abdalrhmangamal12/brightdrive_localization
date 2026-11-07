@@ -1,0 +1,114 @@
+// validate(): the ">0" rule for every core key, plus the Eskf's own checks.
+#include "brightdrive_localization/params.hpp"
+
+#include <cmath>
+#include <stdexcept>
+#include <string>
+
+#include "eskf/eskf.hpp"
+
+namespace brightdrive_localization {
+
+namespace {
+
+void positive(double v, const char* key) {
+  if (!(v > 0.0) || !std::isfinite(v)) {
+    throw std::invalid_argument(std::string("localization.yaml: ") + key +
+                                " must be > 0 (missing or bad value)");
+  }
+}
+
+void positive(int v, const char* key) {
+  if (v <= 0) {
+    throw std::invalid_argument(std::string("localization.yaml: ") + key +
+                                " must be >= 1 (missing or bad value)");
+  }
+}
+
+}  // namespace
+
+void validate(const LocalizerConfig& c) {
+  // The filter rejects a missing noise model, sigmas <= 0, gate <= 0.
+  eskf::Eskf check(c.eskf);
+  positive(c.gate_pose, "eskf.gate_pose");
+  positive(c.gnss_default_sigma_m, "gnss_default_sigma_m");
+  if (!std::isfinite(c.extrinsics.imu_time_offset_s)) {
+    throw std::invalid_argument(
+        "localization.yaml: imu_time_offset_s must be finite");
+  }
+
+  if (c.points.time_field.empty()) {
+    throw std::invalid_argument(
+        "localization.yaml: points.time_field is empty");
+  }
+  positive(c.points.time_scale, "points.time_scale");
+  if (c.points.stamp_is != "start" && c.points.stamp_is != "end") {
+    throw std::invalid_argument(
+        "localization.yaml: points.stamp_is must be 'start' or 'end', got '" +
+        c.points.stamp_is + "'");
+  }
+
+  const auto& m = c.matcher;
+  positive(m.map_voxel_m, "matcher.map_voxel_m");
+  positive(m.coarse_voxel_m, "matcher.coarse_voxel_m");
+  positive(m.source_leaf_m, "matcher.source_leaf_m");
+  positive(m.max_corr_dist_m, "matcher.max_corr_dist_m");
+  positive(m.coarse_max_corr_dist_m, "matcher.coarse_max_corr_dist_m");
+  positive(m.max_iterations, "matcher.max_iterations");
+  positive(m.num_threads, "matcher.num_threads");
+  positive(m.cov_neighbors, "matcher.cov_neighbors");
+  positive(m.min_range_m, "matcher.min_range_m");
+  positive(m.max_range_m, "matcher.max_range_m");
+  if (m.max_range_m <= m.min_range_m) {
+    throw std::invalid_argument(
+        "localization.yaml: matcher.max_range_m must exceed "
+        "matcher.min_range_m");
+  }
+
+  positive(c.meas.sigma_pos_m, "meas.sigma_pos_m");
+  positive(c.meas.sigma_rot_rad, "meas.sigma_rot_rad");
+
+  positive(c.accept.min_inlier_ratio, "accept.min_inlier_ratio");
+  positive(c.accept.max_error_per_inlier, "accept.max_error_per_inlier");
+  positive(c.accept.max_jump_m, "accept.max_jump_m");
+  positive(c.accept.max_jump_rad, "accept.max_jump_rad");
+  positive(c.accept.max_age_s, "accept.max_age_s");
+
+  positive(c.history.keep_s, "history.keep_s");
+
+  const auto& i = c.init;
+  positive(i.yaw_steps, "init.yaw_steps");
+  positive(i.refine_top, "init.refine_top");
+  if (i.refine_top > i.yaw_steps) {
+    throw std::invalid_argument(
+        "localization.yaml: init.refine_top must not exceed init.yaw_steps");
+  }
+  positive(i.margin, "init.margin");
+  positive(i.confirm_n, "init.confirm_n");
+  positive(i.timeout_s, "init.timeout_s");
+  positive(i.seed_gnss_max_age_s, "init.seed_gnss_max_age_s");
+  positive(i.still_window_s, "init.still_window_s");
+  positive(i.p0_sigma_pos_m, "init.p0_sigma_pos_m");
+  positive(i.p0_sigma_yaw_deg, "init.p0_sigma_yaw_deg");
+  positive(i.p0_sigma_rollpitch_deg, "init.p0_sigma_rollpitch_deg");
+  positive(i.p0_sigma_vel_mps, "init.p0_sigma_vel_mps");
+  positive(i.p0_sigma_vel_moving_mps, "init.p0_sigma_vel_moving_mps");
+  positive(i.p0_sigma_ba, "init.p0_sigma_ba");
+  positive(i.p0_sigma_bg, "init.p0_sigma_bg");
+
+  const auto& h = c.health;
+  positive(h.scan_timeout_s, "health.scan_timeout_s");
+  positive(h.gnss_timeout_s, "health.gnss_timeout_s");
+  positive(h.dr_timeout_s, "health.dr_timeout_s");
+  positive(h.degraded_sigma_m, "health.degraded_sigma_m");
+  positive(h.fail_consecutive_gated, "health.fail_consecutive_gated");
+  positive(h.fail_timeout_s, "health.fail_timeout_s");
+  positive(h.fail_sigma_m, "health.fail_sigma_m");
+  if (h.fail_sigma_m <= h.degraded_sigma_m) {
+    throw std::invalid_argument(
+        "localization.yaml: health.fail_sigma_m must exceed "
+        "health.degraded_sigma_m");
+  }
+}
+
+}  // namespace brightdrive_localization

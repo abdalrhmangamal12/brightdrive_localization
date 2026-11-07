@@ -80,3 +80,30 @@ services:
       - ${MAPS_DIR}:/maps
       - /etc/machine-id:/etc/machine-id:ro
     command: sleep infinity
+
+  # Localization (docker/Dockerfile, stage loc = mapping + small_gicp): brightdrive_mapping and brightdrive_localization
+  # built from the mounted repo with colcon (docker/colcon_defaults.yaml lists both). Works from bags, so no dependency
+  # on the server; for a live run start carla-server + sim first. Idle, you exec into it.
+  loc:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: loc
+      args:
+        HOST_UID: "${UID}"
+        HOST_GID: "${GID}"
+    image: brightdrive/loc:dev
+    network_mode: host
+    ipc: host
+    init: true
+    user: "${UID}:${GID}"
+    working_dir: /ws/src/brightdrive_localization
+    environment:
+      <<: *ros-env
+      COLCON_DEFAULTS_FILE: /ws/src/brightdrive_localization/docker/colcon_defaults.yaml
+    volumes:
+      - .:/ws/src/brightdrive_localization
+      - ${BAGS_DIR}:/bags
+      - ${MAPS_DIR}:/maps
+      - /etc/machine-id:/etc/machine-id:ro
+    command: sleep infinity

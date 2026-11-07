@@ -1,0 +1,100 @@
+# brightdrive_localization settings. Core values have no defaults in the node: a missing or non-positive key stops it
+# with the key's name. Every value is logged at startup. Starting values; the matcher study and the replays calibrate them.
+/**:
+  ros__parameters:
+    use_sim_time: true
+
+    # ---- node only ---------------------------------------------------------------------------------------------
+    imu_topic: /imu/data
+    gnss_topic: /gnss/fix_gated          # the gated fixes: the outage scenario withholds them here
+    points_topic: /points_raw
+    initialpose_topic: /initialpose
+    map_yaml: /maps/town03_static.yaml   # its `map:` block: pcd, frame, georeferenced, projection, resolution_m
+    odom_frame: odom
+    base_frame: base_link
+    publish_tf: true
+    output_every_n_imu: 2                # 100 Hz IMU -> 50 Hz pose, odometry, TF
+    status_rate_hz: 10.0
+    debug: true                          # /localization/debug/* topics
+
+    # ---- extrinsics (sim/config/sensors.yaml), xyz [m], roll pitch yaw [deg] -----------------------------------
+    T_base_imu_xyz: [0.0, 0.0, 0.0]
+    T_base_imu_rpy_deg: [0.0, 0.0, 0.0]
+    T_base_lidar_xyz: [0.0, 0.0, 1.9]
+    T_base_lidar_rpy_deg: [0.0, 0.0, 0.0]
+    imu_time_offset_s: 0.0               # added to IMU stamps; calibrate on the bags
+
+    # ---- per-point time of the cloud -----------------------------------------------------------------------------
+    # CARLA bridge and Velodyne: field `time` in seconds after the stamp, stamp = sweep start.
+    # Ouster: `t` in ns -> time_scale 1.0e-9. Livox: `offset_time` in ns.
+    points:
+      time_field: time
+      time_scale: 1.0                    # field unit -> seconds
+      stamp_is: start                    # start | end: where the header stamp sits in the sweep
+
+    # ---- eskf::Params ------------------------------------------------------------------------------------------
+    eskf:
+      noise_model: per_sample            # CARLA sigmas are per reading (sensors.yaml); density for a datasheet IMU
+      sigma_a: 0.05                      # [m/s^2]  raising sigma_a / sigma_g widens P_v over the corner jolts
+      sigma_g: 0.005                     # [rad/s]
+      sigma_ba: 0.0001                   # [m/s^2/sqrt(s)]
+      sigma_bg: 0.00001                  # [rad/s/sqrt(s)]
+      lever_arm: [0.0, 0.0, 1.8]         # GNSS antenna in IMU axes [m]
+      gate: 11.34                        # chi2 3 DOF 99 %, GNSS
+      gate_pose: 22.46                   # chi2 6 DOF 99.9 % while R is fixed floors; 16.81 (99 %) once calibrated
+    gnss_default_sigma_m: 0.3            # when a fix carries no covariance
+
+    # ---- scan matcher (small_gicp VGICP) -----------------------------------------------------------------------
+    matcher:
+      map_voxel_m: 1.0                   # fine voxel map, tracking
+      coarse_voxel_m: 2.5                # coarse voxel map, initializer grid
+      source_leaf_m: 0.5
+      max_corr_dist_m: 1.0               # fine
+      coarse_max_corr_dist_m: 2.5        # coarse
+      max_iterations: 20
+      num_threads: 4
+      cov_neighbors: 10                  # per-point covariance from this many neighbours (map and source)
+      min_range_m: 3.0                   # the car's own returns
+      max_range_m: 100.0
+
+    # ---- LiDAR pose measurement and acceptance ------------------------------------------------------------------
+    meas:
+      sigma_pos_m: 0.15                  # R floors; tune to NIS mean ~6
+      sigma_rot_rad: 0.025
+    accept:
+      min_inlier_ratio: 0.6
+      max_error_per_inlier: 1000000000.0 # placeholder until the matcher study gives the distribution
+      max_jump_m: 3.0                    # match vs prediction, sanity bound
+      max_jump_rad: 0.2
+      max_age_s: 0.2                     # t_now - t_ref when the match lands
+
+    # ---- state history -------------------------------------------------------------------------------------------
+    history:
+      keep_s: 2.0                        # poses + events: deskew, forwarding, init catch-up
+
+    # ---- initializer -----------------------------------------------------------------------------------------------
+    init:
+      yaw_steps: 36                      # 10 deg grid on the coarse map
+      refine_top: 3
+      margin: 0.1                        # inlier-ratio lead of the best over the second
+      confirm_n: 5                       # accepted matches in a row before TRACKING
+      timeout_s: 10.0
+      seed_gnss_max_age_s: 1.0           # a younger fix is the position seed; else /initialpose
+      still_window_s: 2.0                # gyro mean -> b_g on a cold start
+      p0_sigma_pos_m: 0.3
+      p0_sigma_yaw_deg: 5.0
+      p0_sigma_rollpitch_deg: 2.0
+      p0_sigma_vel_mps: 0.5
+      p0_sigma_vel_moving_mps: 10.0      # no still window seen, or re-init after FAILED
+      p0_sigma_ba: 0.1
+      p0_sigma_bg: 0.005
+
+    # ---- health ----------------------------------------------------------------------------------------------------
+    health:
+      scan_timeout_s: 0.5
+      gnss_timeout_s: 1.0
+      dr_timeout_s: 1.0
+      degraded_sigma_m: 0.5
+      fail_consecutive_gated: 10         # 0.5 s of NIS-gated sweeps
+      fail_timeout_s: 5.0
+      fail_sigma_m: 3.0

@@ -5,7 +5,4 @@ log/
 .vscode/
 .cache/
 compile_commands.json
-
-# compiled Eigen exercise, not part of the library
-/eskf/ex
 __pycache__/

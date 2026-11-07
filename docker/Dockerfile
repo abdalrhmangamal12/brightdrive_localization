@@ -1,4 +1,4 @@
-# One Dockerfile, four stages: base, sim (CARLA client), loc (estimator), mapping.
+# One Dockerfile, four stages: base, sim (CARLA client), mapping, loc (estimator = mapping + small_gicp).
 # Build one with:  docker compose build sim
 
 # pinned by digest like the carla image; retag: docker buildx imagetools inspect ros:humble-ros-base-jammy
@@ -74,14 +74,6 @@ RUN python3 -c "import carla, numpy; from importlib.metadata import version; \
     && python3 -c "import srunner.scenariomanager.actorcontrols.simple_vehicle_control; print('srunner OK')" \
     && python3 /opt/scenario_runner/scenario_runner.py --version \
     && source /opt/ros/humble/setup.bash && ros2 bag record --help | grep -q -E -- '--storage \{[^}]*mcap' && echo 'mcap OK'
-
-# ---------------------------------------------------------------------------
-FROM base AS loc
-# GeographicLib: the localizer copies mapping's geo.hpp/geo.cpp (GeographicLib::LocalCartesian) to rebuild a
-# map's projector from map.yaml. The rest of the estimator's deps (loc_ros) are still to come.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgeographic-dev \
-    && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
 FROM base AS mapping
@@ -161,3 +153,37 @@ RUN chmod 755 /mapping_entrypoint.sh \
          >> /etc/bash.bashrc
 ENTRYPOINT ["/mapping_entrypoint.sh"]
 CMD ["bash"]
+
+# ---------------------------------------------------------------------------
+# loc = the mapping stage plus what the localizer adds. One container then builds both ament packages
+# (docker/colcon_defaults.yaml lists mapping and localization) and the mapping tools stay available for replays.
+# Shared with mapping: PCL, tf2, mcap, foxglove, GeographicLib (the localizer copies mapping's geo.hpp/geo.cpp to
+# rebuild a map's projector from map.yaml), yaml-cpp (reads map.yaml).
+FROM mapping AS loc
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libyaml-cpp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# small_gicp (VGICP scan matcher), header-only, at a fixed commit. Plain clone, then the commit is checked; the helper
+# library is not built (it needs fmt), the package includes the headers with -I${SMALL_GICP_INCLUDE_DIR}.
+ARG SMALL_GICP_REPO=https://github.com/koide3/small_gicp.git
+ARG SMALL_GICP_COMMIT=fa0cfc983417c044b6036f71dfa448038bb9c820
+RUN git clone "${SMALL_GICP_REPO}" /opt/small_gicp \
+    && git -C /opt/small_gicp -c advice.detachedHead=false checkout "${SMALL_GICP_COMMIT}" \
+    && [ "$(git -C /opt/small_gicp rev-parse HEAD)" = "${SMALL_GICP_COMMIT}" ] \
+    && echo "small_gicp ${SMALL_GICP_REPO} $(git -C /opt/small_gicp rev-parse HEAD)" >> /opt/VERSIONS.txt
+ENV SMALL_GICP_INCLUDE_DIR=/opt/small_gicp/include
+
+# Build-time check: the VGICP headers compile with OpenMP against the system Eigen, yaml-cpp is found.
+# point_cloud.hpp comes first: incremental_voxelmap.hpp uses std::shared_ptr without including <memory> itself.
+RUN printf '%s\n' '#include <small_gicp/points/point_cloud.hpp>' \
+        '#include <small_gicp/registration/registration.hpp>' \
+        '#include <small_gicp/factors/gicp_factor.hpp>' \
+        '#include <small_gicp/registration/reduction_omp.hpp>' \
+        '#include <small_gicp/ann/gaussian_voxelmap.hpp>' \
+        '#include <yaml-cpp/yaml.h>' \
+        'int main() { small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP> r;' \
+        '  small_gicp::GaussianVoxelMap m(1.0); YAML::Node n = YAML::Load("a: 1");' \
+        '  return (r.optimizer.max_iterations == 20 && n["a"].as<int>() == 1) ? 0 : 1; }' > /tmp/chk.cpp \
+    && g++ -std=c++17 -fopenmp -I${SMALL_GICP_INCLUDE_DIR} -I/usr/include/eigen3 /tmp/chk.cpp -o /tmp/chk -lyaml-cpp \
+    && /tmp/chk && echo 'small_gicp OK' && rm -f /tmp/chk /tmp/chk.cpp && tail -1 /opt/VERSIONS.txt

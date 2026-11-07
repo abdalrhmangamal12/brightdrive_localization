@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>brightdrive_localization</name>
+  <version>0.1.0</version>
+  <description>
+    LiDAR-to-map localization for BrightDrive: the error-state Kalman filter in eskf/ (IMU predict, GNSS and LiDAR
+    pose corrections), small_gicp VGICP scan matching against the mapping package's map, initializer, health monitor.
+    small_gicp (koide3/small_gicp @ fa0cfc9, MIT) is header-only and cloned in the Docker loc stage; it is not part
+    of this package.
+  </description>
+  <maintainer email="abdalrahmangamal1999@gmail.com">Abdalrhman Gamal</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- loc_core (no ROS) -->
+  <depend>eigen</depend>
+  <depend>geographiclib</depend>
+  <depend>libpcl-all-dev</depend>
+  <depend>yaml-cpp</depend>
+
+  <!-- localization_node, match_bag -->
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>rosbag2_cpp</depend>
+
+  <!-- launch files -->
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
