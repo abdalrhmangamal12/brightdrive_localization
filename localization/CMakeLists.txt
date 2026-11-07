@@ -62,6 +62,13 @@ ament_target_dependencies(localization_node
   rclcpp sensor_msgs nav_msgs geometry_msgs diagnostic_msgs std_msgs tf2_ros)
 install(TARGETS localization_node DESTINATION lib/${PROJECT_NAME})
 
+# ---- match_bag: the matcher alone against ground truth, from a bag (tools/match_bag.cpp) --------------------
+find_package(rosbag2_cpp REQUIRED)
+add_executable(match_bag tools/match_bag.cpp)
+target_link_libraries(match_bag loc_core)
+ament_target_dependencies(match_bag rclcpp rosbag2_cpp sensor_msgs nav_msgs geometry_msgs)
+install(TARGETS match_bag DESTINATION lib/${PROJECT_NAME})
+
 install(DIRECTORY config
   DESTINATION share/${PROJECT_NAME}
   PATTERN ".gitkeep" EXCLUDE)
