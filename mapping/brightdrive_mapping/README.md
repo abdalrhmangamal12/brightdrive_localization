@@ -6,45 +6,45 @@ front-end; it is cloned unmodified in the Docker image and is not part of this p
 
 ## Requirements
 
-The mapping section of the task PDF, one row per bullet, with the section here that answers it:
-
-| Requirement | Answered in | In short |
-|---|---|---|
-| A mapping drive over an urban route with overlapping passes, and a road section reserved for reverse-direction localization | [Mapping drive](#mapping-drive) | the Town03 loop twice, 3 914 m, 98.5 % driven twice; reserved waypoints 248 to 299: same direction 0 %, coverage 100 %, heading difference 177 to 179° |
-| The map built from my own pose estimate, no CARLA ground truth as input | [Purpose and input contract](#purpose-and-input-contract), [Pipeline](#pipeline) | the backend reads `/Odometry`, `/cloud_registered_body` and `/gnss/fix` only; ground truth goes to `eval/` alone |
-| Open-source SLAM/LIO allowed; the ROS 2 integration, frames, configuration and validation are my own | [Pipeline](#pipeline), top-level README "What I wrote vs what I used" | FAST-LIO2 unmodified at 8ffac51; the pose graph, GNSS and loop factors, map assembly, configuration, launch, DUFOMap integration and `eval/` are mine |
-| The map aligned to a documented global / CARLA / OpenDRIVE frame, with the transform chain | [Frames and extrinsics](#frames-and-extrinsics), [map.yaml contract](#mapyaml-contract) | `map` = SphericalMercator of Town03's `<geoReference>` = CARLA's world with y flipped; `T_map_origin` estimated from GNSS; APE 0.047 m without alignment |
-| The configured LiDAR-to-base_link transform and the frame assumptions, documented | [Frames and extrinsics](#frames-and-extrinsics) | LiDAR at (0, 0, 1.9) m, level; IMU = base_link; antenna at (0, 0, 1.8) m |
-| Map quality against a CARLA ground-truth reference map: one relative and one absolute metric | [Results](#results) | absolute: APE 0.047 m RMSE, map → reference 0.084 m mean; relative: RPE 0.014 m over 1 m and 0.126 m over 100 m |
-| Dynamic vehicles do not permanently contaminate the static map, or the limitation and its mitigation are documented | [Dynamic objects](#dynamic-objects), [Known limitations](#known-limitations--future-work) | DUFOMap removes the cars' traces (0.82 % of the raw points); its failure mode, road surface under the cars, and the ground protection that would fix it |
+| Task requirement                                                               | Section                                                   |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| Mapping drive with overlapping passes and a reserved reverse-direction section | [Mapping drive](#mapping-drive)                           |
+| Map built from my own pose estimate, no ground truth                           | [Purpose and input contract](#purpose-and-input-contract) |
+| Open-source components and what I wrote                                        | [Pipeline](#pipeline)                                     |
+| Map aligned to the CARLA / OpenDRIVE frame, transform chain                    | [Frames and extrinsics](#frames-and-extrinsics)           |
+| LiDAR-to-base_link transform                                                   | [Frames and extrinsics](#frames-and-extrinsics)           |
+| Map quality: relative and absolute metric                                      | [Results](#results)                                       |
+| Dynamic vehicles                                                               | [Dynamic objects](#dynamic-objects)                       |
 
 ## Pipeline
 
 ```mermaid
 %%{init: {"theme": "neutral"}}%%
-flowchart LR
-  SIM["CARLA 0.9.15<br/>scenario mapping"] --> BAG[("mapping bag")]
-  BAG -- "/points_raw, /imu/data" --> FL["FAST-LIO2<br/>unmodified"]
-  FL -- "/Odometry<br/>/cloud_registered_body" --> BE["backend_node<br/>keyframes · iSAM2<br/>GNSS · loop closure"]
+flowchart TD
+  SIM["CARLA 0.9.15<br/>mapping scenario, 2 laps"] --> BAG[("CARLA ROS bridge (live)<br/>or mapping bag")]
+  BAG -- "/points_raw, /imu/data" --> FL["FAST-LIO2 (unmodified)<br/>LiDAR-inertial odometry"]
+  FL -- "/Odometry + /cloud_registered_body" --> BE["backend_node<br/>keyframes · iSAM2 pose graph<br/>GNSS factors · loop closure"]
   BAG -- "/gnss/fix" --> BE
-  BE -- "save_map" --> RAW["town03.pcd · map.yaml<br/>keyframes/ · trajectories"]
-  RAW --> DF["dynamic_filter.py<br/>DUFOMap"]
-  DF --> STATIC["town03_static.pcd<br/>town03_static.yaml"]
+  BE -- "save_map" --> RAW["town03.pcd · map.yaml<br/>keyframes · trajectories"]
+  RAW --> DF["dynamic_filter.py<br/>DUFOMap: remove moving cars"]
+  DF --> STATIC["town03_static.pcd + yaml"]
   STATIC --> LOC["localization"]
-  subgraph EVAL["eval/: ground truth, evaluation only"]
-    GT["gt_to_tum.py<br/>gt_map_builder.py"] --> ME["mapping_eval.py<br/>APE · RPE · cloud to cloud"]
-    RC["check_reverse_section.py"]
-  end
-  BAG -.->|"/eval/ground_truth"| GT
-  BAG -.->|"/eval/ground_truth"| RC
-  RAW -.-> ME
-  STATIC -.-> ME
-  STATIC -.-> RC
 ```
 
-The results below replay `fastlio_run_20261105_133549`: FAST-LIO's outputs recorded on the raw mapping bag
-`mapping_20261105_070252`, with its `/gnss/fix` and ground truth, so every backend run sees the same input
-("How to run" has both ways). Ground truth reaches `eval/` only (dashed).
+Evaluation runs separately and is the only place ground truth is used:
+
+```mermaid
+%%{init: {"theme": "neutral"}}%%
+flowchart LR
+  GT["/eval/ground_truth<br/>(mapping bag)"] --> B["gt_to_tum.py<br/>gt_map_builder.py"]
+  B --> M["mapping_eval.py<br/>APE · RPE · cloud to cloud"]
+  MAPS["town03.pcd<br/>town03_static.pcd"] --> M
+```
+
+The results below come from one recording: `mapping_20261105_070252` (the raw CARLA mapping drive) and
+`fastlio_run_20261105_133549` (FAST-LIO's outputs on it), replayed so that every backend run sees identical input.
+The nodes only subscribe to topics, so the input can also be the CARLA ROS bridge live ("How to run" has both).
+These mapping bags (~4.7 GB) are not in the download; the maps built from them are. Ground truth reaches `eval/` only.
 
 ## Mapping drive
 
@@ -64,32 +64,10 @@ three or four times. Two streets get extra passes on another lane: the east stre
 112 m) four times northbound in its two lanes, and the top street (y ≈ 131 to 138, x 14 to 141, 125 m) twice in
 each direction. No stretch of the loop is driven the other way in the same lane.
 
-**Reserved section.** Waypoints 248 to 299 of route `main` (route points 5 → 6 → 7, two 90° turns): 324 m planned,
-from (-88.5, 58.9) to (1.7, -80.3), driven forward only during mapping. Scenario `reverse_reuse` drives it the other
-way on the opposite lanes (route `reverse_section`, `snap_across_median`): 289 m in 37.7 s from (-6.4, -75.2) to
-(-78.0, 48.5), of the 304.5 m planned, because the scenario ends about 10 m before the last waypoint.
+**Reserved section.** The mapping drive covered this section in one direction only; the `reverse_reuse` scenario
+drives it the opposite way, using the map without updating it.
 
-| Leg of the reverse drive | Length [m] | Nearest mapping point min / median / max [m] | Heading difference, median |
-|---|---|---|---|
-| east street (x ≈ -10 to -7), southbound | 44 | 8.0 / 10.9 / 11.2 | 177° |
-| south street (y ≈ -132 to -129), westbound | 46 | 3.1 / 3.6 / 5.2 | 178° |
-| west street (x ≈ -78 to -73), northbound | 171 | 10.5 / 10.8 / 14.0 | 179° |
-| corners | 28 | at least 3.5 | at least 126° |
-
-**Proof.** Same direction 0 %: no position of the reverse drive has a mapping sample within 3 m heading within 30°
-of it. Coverage 100 %: every position has at least 25 road points of `town03_static.pcd` within 1 m (median 90,
-minimum 68; 111 on the lanes the mapping car drove), so the map holds the reverse lanes. A trajectory distance
-cannot show that coverage: driving a road the other way means driving its other lanes, 3.5 m (one lane) to 14 m
-(across a median) from where the mapping car drove, and the LiDAR (100 m range) mapped them from there.
-
-![The mapping drive (blue) and the reverse_reuse drive (orange) from ground truth; the reverse drive runs on the opposite lanes of the reserved section](../../eval/results/mapping/reverse_vs_mapping.png)
-
-```
-docker compose run --rm --no-deps -T loc python3 eval/check_reverse_section.py \
-    /bags/mapping_20261105_070252 /bags/reverse_reuse_20261107_153511 --map-yaml /maps/town03_static.yaml --out eval/results/mapping
-```
-
-Exit 0 when both checks hold; it writes `reverse_section.md`, `reverse_section.json` and the figure.
+![The mapping drive (blue) and the reverse_reuse drive (orange), from ground truth](../../eval/results/mapping/reverse_vs_mapping.png)
 
 ## Purpose and input contract
 
@@ -468,25 +446,10 @@ alignment time). `T_map_origin` keeps full precision; the other numbers are roun
 
 ## Maps
 
-The maps are not in git (`*.pcd` is ignored). Data download: <DRIVE_LINK> (folder `maps/`, checksums in its
-`UPLOAD_LIST.md`). Put the four files into `MAPS_DIR` (`/var/tmp/brightdrive_maps` on the host, `/maps` in the
-containers); the commands here and the localizer's default `map_yaml` (`/maps/town03_static.yaml`) then work as
-written.
-
-| File | sha256 |
-|---|---|
-| `town03_static.pcd` | `afd4737cdbf0dd839c3f68369eed7c4bb9cf1abcb992b597ca5a0da05a30c1ae` |
-| `town03_static.yaml` | `4c040b14e085c373ea46f5ec2ce4958e702e5d32c8c42a38718b5e9f0ce265d2` |
-| `town03.pcd` | `8a02a3c12a85d2552572c39771f80ddfd29e27b6bb8128204ebb5c4b395ce557` |
-| `map.yaml` | `fa707a0651b4fd497ef0a58be07cbcd03eaf095f25d6aa0884bfe4bc77a37f10` |
-
-The alternative to the download is to rebuild all four from the FAST-LIO run bag `fastlio_run_20261105_133549`
-(4.7 GB, not in the download) in `/bags`, inside the `mapping` container after `colcon build` (next section).
-The loop count varies slightly between runs, so a rebuilt map does not match these checksums:
-
-```
-ros2 launch brightdrive_mapping backend_replay.launch.py bag:=/bags/fastlio_run_20261105_133549 save_dir:=/maps save_keyframes:=true run_dynamic_filter:=true
-```
+The maps are not in git (`*.pcd` is ignored). Download them from
+[Google Drive](https://drive.google.com/drive/folders/1Glp70xwr7zoCV1obQUhzevf8z3eG_zW0?usp=sharing) (folder
+`maps/`, checksums in `UPLOAD_LIST.md`) and put the four files in `MAPS_DIR` (`/var/tmp/brightdrive_maps` on the
+host, `/maps` in the containers). The commands here and the localizer then work as written.
 
 ## How the map is made
 
@@ -565,7 +528,6 @@ How each number is computed: `eval/results/README.md`.
 | GNSS residual RMS x / y / z | agreement with GNSS; at the 0.3 m noise, so no bias | 0.303 / 0.301 / 0.299 m |
 | loop closures accepted / rejected | how often the overlapping passes were matched | 273 / 5 |
 | removed as dynamic, raw points / cells | what DUFOMap took out ("Dynamic objects") | 0.82 % / 0.29 % |
-| reserved section: same direction / coverage | not mapped in the reverse direction, but mapped ("Mapping drive") | 0 % / 100 % |
 
 `/bags/fastlio_run_20261105_133549`: two laps of Town03, 572 s, 3 918 m of path, 11 442 scans at 20 Hz, 5 724 GNSS
 fixes at 10 Hz with 0.3 m noise, replayed with the launch above.
@@ -656,21 +618,11 @@ shows the removals as streaks along the lanes the ten cars drove.
 
 ## Known limitations / future work
 
-- **Ground protection before trusting the filter.** 82 % of what DUFOMap removed here is road. Label ground with
-  Patchwork++ on each keyframe cloud and keep ground-labelled points whatever DUFOMap says before merging its
-  result into the static map.
+- **The dynamic filter also removes road.** 82 % of what DUFOMap removed is road surface near the moving cars.
+  Future: label ground on each keyframe (e.g. Patchwork++) and keep ground points whatever DUFOMap says.
 - **Loop detection runs on a 1 Hz timer** (as in LIO-SAM), so which keyframes get checked depends on drive and
-  replay speed (273 vs 547 loops on the same bag). Future work: trigger the check by distance travelled (e.g. every
-  5 m), keeping the cost bounded and the result reproducible.
-- **A mid-run `save_map` pauses ingest for a few seconds**: the lock is held for the batch solve and the write
-  (2 to 3 s here). Scans queue and are processed afterwards; nothing was lost at 20 Hz with the 50-deep queue.
-- Rejected loop candidates are counted, not logged with their fitness.
-- GNSS at 0.3 m pins the whole trajectory, so the loop closures' share is small (a fifth, table above); a
-  `gnss_enable: false` run, evaluated with alignment, would show the loops alone.
-- Everything is kept for the run: the odometry history and every keyframe cloud, no marginalization. Resident
-  memory was 0.5 GB at 1 000 keyframes and 0.8 GB at 2 400.
-- At 15 m/s and 20 Hz a scan advances 0.75 m, so `kf_dist` 1.0 m makes a keyframe every 1.5 m, not every metre.
-- `/mapping/path` stamps every pose with the path header's stamp; the keyframe times are in the TUM files.
-- The commits in `map.yaml` are those of the checkouts at launch time, not of the binary; rebuild after
-  checking out.
-- Parameters are typed strictly: an integer where a double is expected (`kf_dist: 1`) stops the node.
+  replay speed (273 vs 547 loops on the same bag). Future: trigger the check by distance travelled (e.g. every 5 m).
+- **GNSS does most of the global work here.** With 0.3 m GNSS the loops add about a fifth of the accuracy; the
+  backend was not evaluated with poor or missing GNSS.
+- **Everything is kept for the whole drive** (all keyframes and clouds, no marginalization): 0.8 GB at 2 400
+  keyframes. Fine for this route; a much longer drive would need submaps or keyframe pruning.
