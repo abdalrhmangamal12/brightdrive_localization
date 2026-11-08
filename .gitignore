@@ -10,3 +10,24 @@ __pycache__/
 eval/results/**/*_tum.txt
 # point clouds stay in MAPS_DIR (maps, keyframes, the ground-truth reference), never in git
 *.pcd
+# old eval runs, kept locally
+eval/results/_superseded/
+eval/results/dbg_*/
+eval/results/final_gnss_outage_crashed/
+eval/results/init*_reloc_live/
+eval/results/clone_nominal/
+eval/results/live1x_*/
+eval/results/tuned_*/
+eval/results/unseen_*/
+eval/results/replay_*/
+eval/results/step6_relocalization/
+eval/results/step7_gnss_outage/
+eval/results/tuning/
+eval/results/mapping_pipeline_run5/
+eval/results/nominal/
+eval/results/gnss_outage/
+eval/results/relocalization/
+eval/results/dense_traffic/
+eval/results/high_speed_turns/
+eval/results/reverse_reuse/
+eval/results/summary.md

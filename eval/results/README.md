@@ -5,7 +5,7 @@ final code. One run per scenario, recorded by `eval/run_live.sh <scenario> final
 evaluated by `eval/loc_metrics.py` against `/eval/ground_truth`. Hardware: Intel i7-13650HX, RTX 4060 8 GB.
 No viewer was connected during these runs (see [Known issues](#known-issues)).
 
-The other folders here are earlier runs (replays, tuning, the first live batch); `summary.md` lists all of them.
+Folders: `final_<scenario>/` (the six scenarios) and `mapping/` (map quality).
 
 ## All scenarios
 
@@ -63,6 +63,10 @@ TRACKING NOMINAL 90.0 s to the end.
 Each folder holds `trajectory.png` (top view against ground truth), `errors.png` (lateral, longitudinal, heading
 over time), `health.png` (lifecycle, health, sigma), `nis.png` (pose NIS), `metrics.json` and `summary.md`;
 high_speed_turns also has `dynamics.png` (speed, yaw rate, lateral acceleration).
+
+The driving itself, from ground truth against route metres (`eval/driving_dynamics.py`, recordings of
+2026-11-05): [high_speed_turns](../plots/high_speed_turns_dynamics.png) (15 m/s straights, 8 m/s corners, two lane
+changes) and [nominal](../plots/nominal_dynamics.png) (8 m/s) for comparison.
 
 | scenario | trajectory | errors | health | NIS |
 |---|---|---|---|---|
