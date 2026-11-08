@@ -49,7 +49,8 @@
           "pointSize": 3,
           "colorMode": "flat",
           "flatColor": "#ffaa00ff",
-          "decayTime": 0
+          "decayTime": 0,
+          "colorField": "z"
         },
         "/localization/pose": {
           "visible": true,
@@ -107,39 +108,20 @@
       },
       "imageMode": {}
     },
-    "Plot!health": {
-      "title": "health (0 nominal, 1 degraded, 2 dead reckoning, 3 failed) / lifecycle (0 wait, 1 init, 2 tracking)",
-      "paths": [
-        {
-          "value": "/localization/debug/health.data[1]",
-          "enabled": true,
-          "timestampMethod": "receiveTime",
-          "label": "health"
-        },
-        {
-          "value": "/localization/debug/health.data[0]",
-          "enabled": true,
-          "timestampMethod": "receiveTime",
-          "label": "lifecycle"
-        }
-      ],
-      "showXAxisLabels": true,
-      "showYAxisLabels": true,
-      "showLegend": true,
-      "legendDisplay": "floating",
-      "showPlotValuesInLegend": true,
-      "isSynced": true,
-      "xAxisVal": "timestamp",
-      "sidebarDimension": 240
-    },
     "Plot!nis": {
-      "title": "pose NIS (gate 22.46)",
       "paths": [
         {
           "value": "/localization/debug/health.data[4]",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "nis_pose"
+        },
+        {
+          "value": "22.46",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "gate 22.46",
+          "color": "#f5222d"
         }
       ],
       "showXAxisLabels": true,
@@ -149,16 +131,23 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "sidebarDimension": 240
+      "sidebarDimension": 240,
+      "foxglovePanelTitle": "pose NIS (gate 22.46)"
     },
     "Plot!epi": {
-      "title": "error per inlier (limit 0.12)",
       "paths": [
         {
           "value": "/localization/debug/health.data[5]",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "error_per_inlier"
+        },
+        {
+          "value": "0.12",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "limit 0.12",
+          "color": "#f5222d"
         }
       ],
       "showXAxisLabels": true,
@@ -168,10 +157,10 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "sidebarDimension": 240
+      "sidebarDimension": 240,
+      "foxglovePanelTitle": "error per inlier (limit 0.12)"
     },
     "Plot!sigma": {
-      "title": "sigma_pos_m",
       "paths": [
         {
           "value": "/localization/debug/health.data[2]",
@@ -187,10 +176,10 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "sidebarDimension": 240
+      "sidebarDimension": 240,
+      "foxglovePanelTitle": "sigma_pos_m"
     },
     "Plot!gnss": {
-      "title": "gnss_age_s",
       "paths": [
         {
           "value": "/localization/debug/health.data[3]",
@@ -206,16 +195,23 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "sidebarDimension": 240
+      "sidebarDimension": 240,
+      "foxglovePanelTitle": "gnss_age_s"
     },
     "Plot!age": {
-      "title": "match_age_ms",
       "paths": [
         {
           "value": "/localization/debug/health.data[6]",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "match_age_ms"
+        },
+        {
+          "value": "100",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "100 ms",
+          "color": "#f5222d"
         }
       ],
       "showXAxisLabels": true,
@@ -225,7 +221,8 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "sidebarDimension": 240
+      "sidebarDimension": 240,
+      "foxglovePanelTitle": "match_age_ms (100 ms line)"
     },
     "DiagnosticSummary!status": {
       "minLevel": 0,
@@ -233,10 +230,37 @@
       "hardwareIdFilter": "",
       "topicToRender": "/localization/status",
       "sortByLevel": true
+    },
+    "StateTransitions!state": {
+      "foxglovePanelTitle": "lifecycle / health / init",
+      "paths": [
+        {
+          "value": "/localization/status.status[0].values[:]{key==\"lifecycle\"}.value",
+          "timestampMethod": "receiveTime",
+          "label": "lifecycle"
+        },
+        {
+          "value": "/localization/status.status[0].values[:]{key==\"health\"}.value",
+          "timestampMethod": "receiveTime",
+          "label": "health"
+        },
+        {
+          "value": "/foxglove_script/init_phase.data",
+          "timestampMethod": "receiveTime",
+          "label": "init (first word)"
+        }
+      ],
+      "isSynced": true,
+      "showPoints": false
     }
   },
   "globalVariables": {},
-  "userNodes": {},
+  "userNodes": {
+    "init_phase": {
+      "name": "init_phase",
+      "sourceCode": "// The first word of the localizer's init status (\"waiting\", \"searching\", \"confirming\", \"done\"), for the\n// State Transitions panel: the full strings carry reasons and numbers and would make one band per value.\nimport { Input } from \"./types\";\n\nexport const inputs = [\"/localization/status\"];\nexport const output = \"/foxglove_script/init_phase\";\n\ntype Output = { data: string };\n\nexport default function script(event: Input<\"/localization/status\">): Output | undefined {\n  const status = event.message.status[0];\n  if (status == undefined) {\n    return undefined;\n  }\n  const init = status.values.find((kv) => kv.key === \"init\");\n  if (init == undefined) {\n    return undefined;\n  }\n  return { data: init.value.split(\" \")[0] ?? init.value };\n}\n"
+    }
+  },
   "playbackConfig": {
     "speed": 1
   },
@@ -253,7 +277,7 @@
       "direction": "column",
       "first": {
         "direction": "column",
-        "first": "Plot!health",
+        "first": "StateTransitions!state",
         "second": {
           "direction": "column",
           "first": "Plot!nis",

@@ -39,8 +39,8 @@ Visualization Manager:
       Enabled: true
       Topic:
         Value: /localization/debug/aligned_scan
-        Depth: 2
-        Reliability Policy: Reliable
+        Depth: 1
+        Reliability Policy: Best Effort
         History Policy: Keep Last
       Style: Points
       Size (Pixels): 3

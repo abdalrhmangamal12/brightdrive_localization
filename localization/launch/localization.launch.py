@@ -2,6 +2,8 @@
 # played separately (the bags carry /clock, so use_sim_time stays true).
 #
 #   ros2 launch brightdrive_localization localization.launch.py [params_file:=<yaml>] [rviz:=true]
+#
+# The aligned scan in RViz / Foxglove needs debug_clouds: true in the params file.
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition

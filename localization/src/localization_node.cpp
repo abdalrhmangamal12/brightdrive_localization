@@ -1,6 +1,7 @@
 // localization_node: the ROS 2 wiring around Localizer. Parameters and their
 // startup log, the map, message conversion, the one-deep sweep slot and the
-// matcher thread, publishers and TF. No estimation here.
+// matcher thread, publishers and TF, and the debug cloud thread. No estimation
+// here.
 #include <tf2_ros/transform_broadcaster.h>
 
 #include <Eigen/Geometry>
@@ -21,6 +22,7 @@
 #include <mutex>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
@@ -60,7 +62,9 @@ struct NodeParams {
   bool publish_tf = true;
   int output_every_n_imu = 2;
   double status_rate_hz = 10.0;
-  bool debug = false;
+  bool debug_metrics = true;          // /localization/debug/match per sweep
+  bool debug_clouds = false;          // /localization/debug/aligned_scan
+  double debug_cloud_rate_hz = 5.0;   // aligned_scan at most this often
   bool publish_map = true;  // the map once at 1 m voxels, for RViz / Foxglove
 };
 
@@ -194,13 +198,16 @@ class LocalizationNode : public rclcpp::Node {
       RCLCPP_INFO(get_logger(), "published /localization/map: %zu points",
                   down->size());
     }
-    if (np_.debug) {
+    if (np_.debug_metrics) {
       match_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
           "/localization/debug/match", rclcpp::QoS(50));
+    }
+    if (np_.debug_clouds) {
+      // Best effort and on its own thread: a slow viewer drops clouds instead
+      // of holding up the matcher.
       aligned_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
-          "/localization/debug/aligned_scan", rclcpp::QoS(2));
-      deskewed_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
-          "/localization/debug/deskewed_cloud", rclcpp::QoS(2));
+          "/localization/debug/aligned_scan", rclcpp::QoS(1).best_effort());
+      cloud_thread_ = std::thread([this]() { cloudLoop(); });
     }
     if (np_.publish_tf) {
       tf_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -243,6 +250,12 @@ class LocalizationNode : public rclcpp::Node {
     }
     slot_cv_.notify_all();
     if (matcher_thread_.joinable()) matcher_thread_.join();
+    {
+      std::lock_guard<std::mutex> lk(cloud_mtx_);
+      cloud_stop_ = true;
+    }
+    cloud_cv_.notify_all();
+    if (cloud_thread_.joinable()) cloud_thread_.join();
   }
 
  private:
@@ -286,7 +299,13 @@ class LocalizationNode : public rclcpp::Node {
     if (!(np_.status_rate_hz > 0.0)) {
       throw std::invalid_argument("status_rate_hz must be > 0");
     }
-    np_.debug = declare_parameter<bool>("debug", false);
+    np_.debug_metrics = declare_parameter<bool>("debug_metrics", true);
+    np_.debug_clouds = declare_parameter<bool>("debug_clouds", false);
+    np_.debug_cloud_rate_hz =
+        declare_parameter<double>("debug_cloud_rate_hz", 5.0);
+    if (!(np_.debug_cloud_rate_hz > 0.0)) {
+      throw std::invalid_argument("debug_cloud_rate_hz must be > 0");
+    }
     np_.publish_map = declare_parameter<bool>("publish_map", true);
 
     auto& c = cfg_;
@@ -402,10 +421,12 @@ class LocalizationNode : public rclcpp::Node {
                 np_.points_topic.c_str(), np_.initialpose_topic.c_str());
     RCLCPP_INFO(get_logger(),
                 "node: frames %s -> %s -> %s, publish_tf %d, output every %d "
-                "IMU samples, status %.1f Hz, debug %d",
+                "IMU samples, status %.1f Hz, debug metrics %d, debug clouds "
+                "%d at %.1f Hz",
                 map_.frame.c_str(), np_.odom_frame.c_str(),
                 np_.base_frame.c_str(), np_.publish_tf, np_.output_every_n_imu,
-                np_.status_rate_hz, np_.debug);
+                np_.status_rate_hz, np_.debug_metrics, np_.debug_clouds,
+                np_.debug_cloud_rate_hz);
     RCLCPP_INFO(get_logger(),
                 "map: %s -> %s, frame %s, resolution %.2f m, projection %s "
                 "origin lat %.8f lon %.8f alt %.2f",
@@ -576,7 +597,7 @@ class LocalizationNode : public rclcpp::Node {
         RCLCPP_INFO(get_logger(), "started on the sweep at t %.2f s",
                     rep.t_ref);
       }
-      publishDebug(rep, msg->header.frame_id);
+      publishDebug(rep);
     }
   }
 
@@ -756,10 +777,11 @@ class LocalizationNode : public rclcpp::Node {
     st.values.push_back(kv);
   }
 
-  void publishDebug(const SweepReport& rep, const std::string& lidar_frame) {
-    if (!np_.debug) return;
-    if (rep.kind == SweepReport::Kind::kMatched ||
-        rep.kind == SweepReport::Kind::kStarted) {
+  // Matcher thread. The metrics are one small message; the cloud is only
+  // handed to the cloud thread.
+  void publishDebug(const SweepReport& rep) {
+    if (match_pub_ && (rep.kind == SweepReport::Kind::kMatched ||
+                       rep.kind == SweepReport::Kind::kStarted)) {
       const MatchResult& m = rep.match;
       std_msgs::msg::Float64MultiArray a;
       a.data = {rep.t_ref,
@@ -776,15 +798,38 @@ class LocalizationNode : public rclcpp::Node {
                 rep.age_s * 1e3};
       match_pub_->publish(a);
     }
-    if (!rep.source) return;
-    if (aligned_pub_->get_subscription_count() > 0 &&
-        rep.match.num_inliers > 0) {
-      aligned_pub_->publish(
-          toCloud(*rep.source, rep.match.T_map_lidar, map_.frame, rep.t_ref));
+    if (!aligned_pub_ || !rep.source || rep.match.num_inliers == 0 ||
+        aligned_pub_->get_subscription_count() == 0) {
+      return;
     }
-    if (deskewed_pub_->get_subscription_count() > 0) {
-      deskewed_pub_->publish(toCloud(*rep.source, Eigen::Isometry3d::Identity(),
-                                     lidar_frame, rep.t_ref));
+    // Rate limit on data time, 1 ms slack so 50 ms sweeps give exactly 5 Hz;
+    // a jump back (bag restarted) starts over.
+    if (rep.t_ref >= last_cloud_t_ &&
+        rep.t_ref - last_cloud_t_ < 1.0 / np_.debug_cloud_rate_hz - 1e-3) {
+      return;
+    }
+    last_cloud_t_ = rep.t_ref;
+    {
+      std::lock_guard<std::mutex> lk(cloud_mtx_);
+      cloud_slot_ = CloudJob{rep.source, rep.match.T_map_lidar, rep.t_ref};
+    }
+    cloud_cv_.notify_one();
+  }
+
+  // ---- debug cloud thread -------------------------------------------------
+  // Converts and publishes the newest aligned scan; one waiting at most.
+  void cloudLoop() {
+    while (true) {
+      CloudJob job;
+      {
+        std::unique_lock<std::mutex> lk(cloud_mtx_);
+        cloud_cv_.wait(lk, [this] { return cloud_stop_ || cloud_slot_; });
+        if (cloud_stop_) return;
+        job = std::move(*cloud_slot_);
+        cloud_slot_.reset();
+      }
+      aligned_pub_->publish(toCloud(*job.source, job.T_map_lidar, map_.frame,
+                                    job.t_ref));
     }
   }
 
@@ -808,7 +853,6 @@ class LocalizationNode : public rclcpp::Node {
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr health_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr aligned_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr deskewed_pub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_;
 
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
@@ -826,6 +870,19 @@ class LocalizationNode : public rclcpp::Node {
   uint64_t sweeps_dropped_busy_ = 0;
   std::thread matcher_thread_;
   std::atomic<uint64_t> scan_errors_{0};
+
+  // The one-deep slot between the matcher and the debug cloud thread.
+  struct CloudJob {
+    small_gicp::PointCloud::ConstPtr source;
+    Eigen::Isometry3d T_map_lidar;
+    double t_ref = 0.0;
+  };
+  std::mutex cloud_mtx_;
+  std::condition_variable cloud_cv_;
+  std::optional<CloudJob> cloud_slot_;
+  bool cloud_stop_ = false;
+  std::thread cloud_thread_;
+  double last_cloud_t_ = -1e9;  // matcher thread only
 
   // Executor-only state.
   uint64_t imu_count_ = 0;
