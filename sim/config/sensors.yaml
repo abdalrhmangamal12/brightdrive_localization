@@ -124,8 +124,10 @@ sensors:
     # The topic the ESTIMATOR subscribes: the same fixes after the GNSS gate (sim/gnss_gate/gnss_gate.py),
     # which withholds them during a scenario's outage window. Same QoS as `topic`.
     gated_topic: /gnss/fix_gated
-    # Keep up to 10 GNSS messages (1 s at 10 Hz).
-    queue_depth: 10
+    # Best effort and volatile: the publishers (the bridge, and the gate on gated_topic) never use more than their
+    # newest message. The gate also subscribes `topic` with this depth: 4 = 0.4 s of fixes while its executor is
+    # busy. The localizer sets its own subscription depth.
+    queue_depth: 4
     # Delivery: best_effort drops a message when the receiver can't keep up (the default for sensors);
     # reliable resends lost pieces. Subscribers must ask for the same or weaker.
     reliability: best_effort
