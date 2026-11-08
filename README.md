@@ -4,8 +4,10 @@ CARLA 0.9.15 · Town03 · ROS 2 Humble · C++
 
 | Component | Status | Folder |
 |---|---|---|
-| Error-state Kalman filter (IMU + GNSS), pure C++ | in progress | [`eskf/`](eskf/README.md) |
-| Mapping: FAST-LIO (upstream) → pose graph, loop closure, GNSS factors (mine) → `map.pcd` | skeleton | [`mapping/brightdrive_mapping/`](mapping/brightdrive_mapping/README.md) |
+| Simulation: CARLA in Docker, six scenarios | done | [`sim/`](#simulation) |
+| Mapping: FAST-LIO (upstream) → pose graph, loop closure, GNSS factors (mine) → `town03_static.pcd` | done, map in Drive ([Data](#data)) | [`mapping/brightdrive_mapping/`](mapping/brightdrive_mapping/README.md) |
+| Error-state Kalman filter (IMU, GNSS, LiDAR pose), pure C++ | done | [`eskf/`](eskf/README.md) |
+| Localization: ESKF + small_gicp map matching, one ROS 2 node | done, all six scenarios pass live | [`localization/`](localization/README.md) |
 
 ## Data
 
