@@ -65,11 +65,14 @@ struct NodeParams {
   bool debug_metrics = true;          // /localization/debug/match per sweep
   bool debug_clouds = false;          // /localization/debug/aligned_scan
   double debug_cloud_rate_hz = 5.0;   // aligned_scan at most this often
-  bool publish_map = true;  // the map once at 1 m voxels, for RViz / Foxglove
+  bool publish_map = true;  // the map once, downsampled, for RViz / Foxglove
+  double publish_map_voxel_m = 2.0;  // viewer copy only; the matcher keeps its own
 };
 
-// A path pose every this many seconds of data time.
+// A path pose every this many seconds of data time, the newest kPathMaxPoses
+// kept (2000 x 0.5 s = the last 1000 s).
 constexpr double kPathPeriodS = 0.5;
+constexpr size_t kPathMaxPoses = 2000;
 
 std::string toString(const Eigen::Vector3d& v) {
   char buf[96];
@@ -183,8 +186,9 @@ class LocalizationNode : public rclcpp::Node {
         "/localization/odometry", out_qos);
     status_pub_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
         "/localization/status", out_qos);
-    path_pub_ =
-        create_publisher<nav_msgs::msg::Path>("/localization/path", out_qos);
+    // The whole path in every message: a viewer only needs the newest one.
+    path_pub_ = create_publisher<nav_msgs::msg::Path>(
+        "/localization/path", rclcpp::QoS(1).best_effort());
     health_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
         "/localization/debug/health", rclcpp::QoS(10));
     if (np_.publish_map) {
@@ -192,11 +196,13 @@ class LocalizationNode : public rclcpp::Node {
       map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
           "/localization/map", rclcpp::QoS(1).reliable().transient_local());
       small_gicp::PointCloud cloud(points);
-      const auto down = small_gicp::voxelgrid_sampling(cloud, 1.0);
+      const auto down =
+          small_gicp::voxelgrid_sampling(cloud, np_.publish_map_voxel_m);
       map_pub_->publish(
           toCloud(*down, Eigen::Isometry3d::Identity(), map_.frame, 0.0));
-      RCLCPP_INFO(get_logger(), "published /localization/map: %zu points",
-                  down->size());
+      RCLCPP_INFO(get_logger(),
+                  "published /localization/map: %zu points at %.1f m voxels",
+                  down->size(), np_.publish_map_voxel_m);
     }
     if (np_.debug_metrics) {
       match_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -307,6 +313,11 @@ class LocalizationNode : public rclcpp::Node {
       throw std::invalid_argument("debug_cloud_rate_hz must be > 0");
     }
     np_.publish_map = declare_parameter<bool>("publish_map", true);
+    np_.publish_map_voxel_m =
+        declare_parameter<double>("publish_map_voxel_m", 2.0);
+    if (!(np_.publish_map_voxel_m > 0.0)) {
+      throw std::invalid_argument("publish_map_voxel_m must be > 0");
+    }
 
     auto& c = cfg_;
     c.extrinsics.T_base_imu =
@@ -655,6 +666,10 @@ class LocalizationNode : public rclcpp::Node {
       ps.pose = pose.pose.pose;
       path_.header = pose.header;
       path_.poses.push_back(ps);
+      if (path_.poses.size() > kPathMaxPoses) {
+        path_.poses.erase(path_.poses.begin(),
+                          path_.poses.end() - kPathMaxPoses);
+      }
       path_pub_->publish(path_);
     }
     // IMU callback entry to the last output published, wall time.
