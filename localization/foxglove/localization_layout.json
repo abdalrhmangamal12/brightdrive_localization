@@ -39,17 +39,18 @@
         "/localization/map": {
           "visible": true,
           "pointSize": 1.5,
-          "colorMode": "colormap",
-          "colorMap": "turbo",
+          "colorMode": "flat",
           "colorField": "z",
-          "decayTime": 0
+          "decayTime": 0,
+          "flatColor": "#c8c8c8ff"
         },
         "/localization/debug/aligned_scan": {
           "visible": true,
           "pointSize": 3,
           "colorMode": "flat",
-          "flatColor": "#ffaa00ff",
-          "decayTime": 0
+          "flatColor": "#00ff40ff",
+          "decayTime": 0,
+          "colorField": "z"
         },
         "/localization/pose": {
           "visible": true,
@@ -65,10 +66,10 @@
         },
         "/localization/path": {
           "visible": true,
-          "lineWidth": 0.2,
+          "lineWidth": 0.3,
           "gradient": [
-            "#00ff78ff",
-            "#00ff78ff"
+            "#ffcc00ff",
+            "#ffcc00ff"
           ]
         },
         "/localization/odometry": {
@@ -107,58 +108,58 @@
       },
       "imageMode": {}
     },
-    "Plot!health": {
-      "title": "health (0 nominal, 1 degraded, 2 dead reckoning, 3 failed) / lifecycle (0 wait, 1 init, 2 tracking)",
+    "StateTransitions!state": {
+      "foxglovePanelTitle": "State",
       "paths": [
         {
-          "value": "/localization/debug/health.data[1]",
-          "enabled": true,
+          "value": "/localization/status.status[0].values[:]{key==\"lifecycle\"}.value",
+          "timestampMethod": "receiveTime",
+          "label": "lifecycle"
+        },
+        {
+          "value": "/localization/status.status[0].values[:]{key==\"health\"}.value",
           "timestampMethod": "receiveTime",
           "label": "health"
         },
         {
-          "value": "/localization/debug/health.data[0]",
-          "enabled": true,
+          "value": "/foxglove_script/init_phase.data",
           "timestampMethod": "receiveTime",
-          "label": "lifecycle"
+          "label": "init (first word)"
         }
       ],
-      "showXAxisLabels": true,
-      "showYAxisLabels": true,
-      "showLegend": true,
-      "legendDisplay": "floating",
-      "showPlotValuesInLegend": true,
       "isSynced": true,
-      "xAxisVal": "timestamp",
-      "sidebarDimension": 240
+      "showPoints": false
     },
-    "Plot!nis": {
-      "title": "pose NIS (gate 22.46)",
+    "Plot!dsq": {
+      "foxglovePanelTitle": "Update check (d²)",
       "paths": [
         {
           "value": "/localization/debug/health.data[4]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "nis_pose"
-        }
-      ],
-      "showXAxisLabels": true,
-      "showYAxisLabels": true,
-      "showLegend": true,
-      "legendDisplay": "floating",
-      "showPlotValuesInLegend": true,
-      "isSynced": true,
-      "xAxisVal": "timestamp",
-      "sidebarDimension": 240
-    },
-    "Plot!epi": {
-      "title": "error per inlier (limit 0.12)",
-      "paths": [
+          "label": "d² pose",
+          "color": "#4e98e2"
+        },
         {
-          "value": "/localization/debug/health.data[5]",
+          "value": "22.46",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "error_per_inlier"
+          "label": "pose gate",
+          "color": "#4e98e2"
+        },
+        {
+          "value": "/localization/debug/health.data[9]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "d² GNSS",
+          "color": "#f5a623"
+        },
+        {
+          "value": "11.34",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "GNSS gate",
+          "color": "#f5a623"
         }
       ],
       "showXAxisLabels": true,
@@ -170,33 +171,22 @@
       "xAxisVal": "timestamp",
       "sidebarDimension": 240
     },
-    "Plot!sigma": {
-      "title": "sigma_pos_m",
+    "Plot!uncertainty": {
+      "foxglovePanelTitle": "Uncertainty",
       "paths": [
         {
           "value": "/localization/debug/health.data[2]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "sigma_pos_m"
-        }
-      ],
-      "showXAxisLabels": true,
-      "showYAxisLabels": true,
-      "showLegend": true,
-      "legendDisplay": "floating",
-      "showPlotValuesInLegend": true,
-      "isSynced": true,
-      "xAxisVal": "timestamp",
-      "sidebarDimension": 240
-    },
-    "Plot!gnss": {
-      "title": "gnss_age_s",
-      "paths": [
+          "label": "σ position [m]",
+          "color": "#3cba54"
+        },
         {
-          "value": "/localization/debug/health.data[3]",
+          "value": "/localization/debug/health.data[10]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "gnss_age_s"
+          "label": "σ yaw [deg]",
+          "color": "#a05cd6"
         }
       ],
       "showXAxisLabels": true,
@@ -207,67 +197,30 @@
       "isSynced": true,
       "xAxisVal": "timestamp",
       "sidebarDimension": 240
-    },
-    "Plot!age": {
-      "title": "match_age_ms",
-      "paths": [
-        {
-          "value": "/localization/debug/health.data[6]",
-          "enabled": true,
-          "timestampMethod": "receiveTime",
-          "label": "match_age_ms"
-        }
-      ],
-      "showXAxisLabels": true,
-      "showYAxisLabels": true,
-      "showLegend": true,
-      "legendDisplay": "floating",
-      "showPlotValuesInLegend": true,
-      "isSynced": true,
-      "xAxisVal": "timestamp",
-      "sidebarDimension": 240
-    },
-    "DiagnosticSummary!status": {
-      "minLevel": 0,
-      "pinnedIds": [],
-      "hardwareIdFilter": "",
-      "topicToRender": "/localization/status",
-      "sortByLevel": true
     }
   },
   "globalVariables": {},
-  "userNodes": {},
+  "userNodes": {
+    "init_phase": {
+      "name": "init_phase",
+      "sourceCode": "// The first word of the localizer's init status (\"waiting\", \"searching\", \"confirming\", \"done\"), for the\n// State Transitions panel: the full strings carry reasons and numbers and would make one band per value.\nimport { Input } from \"./types\";\n\nexport const inputs = [\"/localization/status\"];\nexport const output = \"/foxglove_script/init_phase\";\n\ntype Output = { data: string };\n\nexport default function script(event: Input<\"/localization/status\">): Output | undefined {\n  const status = event.message.status[0];\n  if (status == undefined) {\n    return undefined;\n  }\n  const init = status.values.find((kv) => kv.key === \"init\");\n  if (init == undefined) {\n    return undefined;\n  }\n  return { data: init.value.split(\" \")[0] ?? init.value };\n}\n"
+    }
+  },
   "playbackConfig": {
     "speed": 1
   },
   "layout": {
     "direction": "row",
-    "splitPercentage": 55,
-    "first": {
-      "direction": "column",
-      "splitPercentage": 75,
-      "first": "3D!localization",
-      "second": "DiagnosticSummary!status"
-    },
+    "splitPercentage": 60,
+    "first": "3D!localization",
     "second": {
       "direction": "column",
-      "first": {
-        "direction": "column",
-        "first": "Plot!health",
-        "second": {
-          "direction": "column",
-          "first": "Plot!nis",
-          "second": "Plot!epi"
-        }
-      },
+      "splitPercentage": 33,
+      "first": "StateTransitions!state",
       "second": {
         "direction": "column",
-        "first": "Plot!sigma",
-        "second": {
-          "direction": "column",
-          "first": "Plot!gnss",
-          "second": "Plot!age"
-        }
+        "first": "Plot!dsq",
+        "second": "Plot!uncertainty"
       }
     }
   }

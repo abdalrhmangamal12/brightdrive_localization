@@ -19,7 +19,7 @@ Visualization Manager:
       Color: 90; 90; 90
       Reference Frame: <Fixed Frame>
     - Class: rviz_default_plugins/PointCloud2
-      Name: Map (1 m voxels)
+      Name: Map (viewer copy)
       Enabled: true
       Topic:
         Value: /localization/map
@@ -39,8 +39,8 @@ Visualization Manager:
       Enabled: true
       Topic:
         Value: /localization/debug/aligned_scan
-        Depth: 2
-        Reliability Policy: Reliable
+        Depth: 1
+        Reliability Policy: Best Effort
         History Policy: Keep Last
       Style: Points
       Size (Pixels): 3
@@ -91,7 +91,7 @@ Visualization Manager:
       Topic:
         Value: /localization/path
         Depth: 1
-        Reliability Policy: Reliable
+        Reliability Policy: Best Effort
         History Policy: Keep Last
       Line Style: Lines
       Line Width: 0.2

@@ -15,8 +15,11 @@
     publish_tf: true
     output_every_n_imu: 2                # 100 Hz IMU -> 50 Hz pose, odometry, TF
     status_rate_hz: 10.0
-    debug: true                          # /localization/debug/* topics
-    publish_map: true                    # /localization/map once (1 m voxels, latched) for RViz / Foxglove
+    debug_metrics: true                  # /localization/debug/match: one small array per sweep
+    debug_clouds: false                  # /localization/debug/aligned_scan (best effort) for RViz / Foxglove
+    debug_cloud_rate_hz: 5.0             # aligned_scan at most this often (data time)
+    publish_map: true                    # /localization/map once (latched) for RViz / Foxglove
+    publish_map_voxel_m: 2.0             # its voxel size; the matcher's maps are not affected
 
     # ---- extrinsics (sim/config/sensors.yaml), xyz [m], roll pitch yaw [deg] -----------------------------------
     T_base_imu_xyz: [0.0, 0.0, 0.0]

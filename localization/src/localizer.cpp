@@ -591,6 +591,10 @@ double Localizer::sigmaPosLocked() const {
                    3.0);
 }
 
+double Localizer::sigmaYawDegLocked() const {
+  return std::sqrt(eskf_.covariance()(eskf::kTh + 2, eskf::kTh + 2)) / kDeg;
+}
+
 bool Localizer::stateFiniteLocked() const {
   const eskf::NominalState& x = eskf_.state();
   return x.p.allFinite() && x.v.allFinite() && x.q.coeffs().allFinite() &&
@@ -715,10 +719,7 @@ std::vector<std::pair<std::string, std::string>> Localizer::statusValues()
   kv.emplace_back("sigma_pos_m",
                   tracking ? fmt("%.3f", sigmaPosLocked()) : "-");
   kv.emplace_back("sigma_yaw_deg",
-                  tracking ? fmt("%.3f", std::sqrt(eskf_.covariance()(
-                                             eskf::kTh + 2, eskf::kTh + 2)) /
-                                             kDeg)
-                           : "-");
+                  tracking ? fmt("%.3f", sigmaYawDegLocked()) : "-");
   kv.emplace_back("sweeps_skipped_no_imu",
                   std::to_string(sweeps_skipped_no_imu_));
   kv.emplace_back("sweeps_skipped_no_pose",
@@ -759,7 +760,9 @@ std::vector<double> Localizer::healthNumbers() const {
           last_error_per_inlier_,
           last_age_ms_,
           static_cast<double>(health_.consecutiveGated()),
-          filter_active_ ? health_.lidarAge(t) : nan};
+          filter_active_ ? health_.lidarAge(t) : nan,
+          last_nis_gnss_,
+          filter_active_ ? sigmaYawDegLocked() : nan};
 }
 
 }  // namespace brightdrive_localization

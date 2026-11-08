@@ -89,7 +89,8 @@ class Localizer {
   Lifecycle lifecycle() const;
   // [lifecycle 0 wait / 1 init / 2 tracking, health 0 nominal / 1 degraded /
   //  2 dead reckoning / 3 failed (-1 not tracking), sigma_pos_m, gnss_age_s,
-  //  nis_pose, error_per_inlier, match_age_ms, consecutive_gated, scan_age_s]
+  //  nis_pose, error_per_inlier, match_age_ms, consecutive_gated, scan_age_s,
+  //  nis_gnss (d2 of the last GNSS update), sigma_yaw_deg]
   std::vector<double> healthNumbers() const;
   // Status key-values (diagnostic_msgs/KeyValue), formatted.
   std::vector<std::pair<std::string, std::string>> statusValues() const;
@@ -111,6 +112,7 @@ class Localizer {
   void evaluateHealthLocked();
   bool stateFiniteLocked() const;
   double sigmaPosLocked() const;
+  double sigmaYawDegLocked() const;
 
   LocalizerConfig cfg_;
   Eigen::Isometry3d T_imu_base_;

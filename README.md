@@ -4,8 +4,18 @@ CARLA 0.9.15 · Town03 · ROS 2 Humble · C++
 
 | Component | Status | Folder |
 |---|---|---|
-| Error-state Kalman filter (IMU + GNSS), pure C++ | in progress | [`eskf/`](eskf/README.md) |
-| Mapping: FAST-LIO (upstream) → pose graph, loop closure, GNSS factors (mine) → `map.pcd` | skeleton | [`mapping/brightdrive_mapping/`](mapping/brightdrive_mapping/README.md) |
+| Simulation: CARLA in Docker, six scenarios | done | [`sim/`](#simulation) |
+| Mapping: FAST-LIO (upstream) → pose graph, loop closure, GNSS factors (mine) → `town03_static.pcd` | done, map in Drive ([Data](#data)) | [`mapping/brightdrive_mapping/`](mapping/brightdrive_mapping/README.md) |
+| Error-state Kalman filter (IMU, GNSS, LiDAR pose), pure C++ | done | [`eskf/`](eskf/README.md) |
+| Localization: ESKF + small_gicp map matching, one ROS 2 node | done, all six scenarios pass live | [`localization/`](localization/README.md) |
+
+## Data
+
+Maps and bags are not in git. Download them from
+[Google Drive](https://drive.google.com/drive/folders/1Glp70xwr7zoCV1obQUhzevf8z3eG_zW0?usp=sharing)
+(`UPLOAD_LIST.md` there lists every file with its checksum). Put the maps in `MAPS_DIR` (`/var/tmp/brightdrive_maps`
+on the host, `/maps` in the containers) and the bags in `BAGS_DIR` (`/var/tmp/brightdrive_bags`, `/bags` in the
+containers); the commands in the READMEs then work as written.
 
 ## Simulation
 
@@ -87,10 +97,77 @@ through. Not loaded by default. If the window does not appear: `xhost +SI:localu
   6.9 of 8 GB); not seen since Town03 at start and `prime-select on-demand`.
 - The server keeps running between runs; stop it only when you are done (a restart costs the startup time).
 
+### Scenarios
+
+Defined in `sim/config/sim.yaml`; each scenario lists only what it changes from `defaults`: the `main` loop
+through Town03 at 8 m/s, a 5 s standing start, clear weather, GNSS noise 0.3 m, no traffic. The OpenSCENARIO files
+are in `sim/scenarios/xosc/`.
+
+- `nominal`: the defaults.
+- `gnss_outage`: no GNSS fixes on `/gnss/fix_gated` from 60 s for 30 s.
+- `relocalization`: starts mid-route (waypoint 170); `/initialpose` is 5 m off at 45° with 30° of heading error.
+- `dense_traffic`: 40 traffic vehicles.
+- `high_speed_turns`: 15 m/s on the long straights, 8 m/s in the turns, two lane changes over 30 m (left at
+  1470 m, right at 1515 m).
+- `reverse_reuse`: only the section reserved in mapping (323 m), driven in the direction the mapping drive never
+  took.
+
+```
+sim/scripts/run.sh <scenario>                 # the scenario alone (--record: every topic into BAGS_DIR)
+eval/run_live.sh <scenario> <run_name>        # live with the localizer; metrics and plots in eval/results/<run_name>/
+```
+
+Sensors (`sim/config/sensors.yaml`), mounts in base_link, no rotation:
+
+| Sensor | Rate | Noise | Mount |
+|---|---|---|---|
+| LiDAR, 64 channels, 100 m | 20 Hz sweeps of 5 slices 10 ms apart | range σ 0.02 m | (0, 0, 1.9) m |
+| IMU | 100 Hz | per reading: accel σ 0.05 m/s², gyro σ 0.005 rad/s; gyro bias (0.001, 0.001, 0.002) rad/s | (0, 0, 0) = base_link |
+| GNSS | 10 Hz | σ 0.3 m (`gnss_noise_m` in `sim.yaml`), no bias | (0, 0, 1.8) m |
+
 ## Mapping
 
 FAST-LIO (upstream, pinned, built into the image) and `mapping/brightdrive_mapping` (mine: pose graph, loop closure,
 GNSS factors, map assembly), built from the mounted repo. Commands run from the repo root.
+
+### Mapping pipeline
+
+```mermaid
+%%{init: {"theme": "neutral"}}%%
+flowchart LR
+  BAG[(mapping bag<br/>or live CARLA)]
+  subgraph MAP["brightdrive_mapping"]
+    FL["FAST-LIO2<br/>front-end, unmodified"]
+    BE["mapping_backend<br/>keyframes · pose graph<br/>GNSS · loop closure"]
+  end
+  subgraph OUT["/maps"]
+    PCD["town03.pcd<br/>map.yaml"]
+    TRAJ["trajectories TUM<br/>loops.txt"]
+  end
+  EVAL["evaluation<br/>evo vs ground truth"]
+  BAG -- "/points_raw, /imu/data" --> FL
+  FL -- "/Odometry + /cloud_registered_body" --> BE
+  BAG -- "/gnss/fix" --> BE
+  BE -- "save_map" --> PCD
+  BE --> TRAJ
+  TRAJ --> EVAL
+```
+
+Frames: `map` → `fastlio_origin` (backend: georeference + loop correction) → `fastlio_odom` → `fastlio_imu` (FAST-LIO).
+
+Extrinsics (set by hand to match the sensor mounts): IMU→LiDAR in `fastlio_carla.yaml` (`extrinsic_T`, `extrinsic_R`),
+IMU→GNSS antenna in `backend.yaml` (`gnss_lever_arm`), with base_link = IMU. Both nodes read them from YAML only, not
+from `/tf_static`, and the backend logs the values it loaded at startup.
+
+Outputs in `/maps` (`MAPS_DIR`), written by `save_map` and on shutdown:
+
+| File | Content |
+|---|---|
+| `town03.pcd` | the map: keyframe clouds at optimized poses, voxel-downsampled, frame `map` |
+| `map.yaml` | metadata: frame, resolution, source bag, FAST-LIO and backend commits, extrinsics, georeference, `map → fastlio_origin` |
+| `trajectory_optimized_tum.txt` | keyframe poses in `map` (`t x y z qx qy qz qw`), the evo input |
+| `trajectory_fastlio_tum.txt` | the same keyframes at raw FAST-LIO poses in `fastlio_odom` |
+| `loops.txt` | accepted loop closures: `cur prev fitness` |
 
 ### Build the image
 
@@ -117,7 +194,7 @@ docker compose run --rm mapping <cmd>        # one-shot command through the entr
 
 ```
 docker compose exec mapping bash
-ros2 bag play /bags/<bag> --clock                                                   # terminal 1
+ros2 bag play /bags/<bag>                                                           # terminal 1 (the bags carry /clock)
 ros2 launch fast_lio mapping.launch.py rviz:=false use_sim_time:=true \
     config_path:=/ws/src/brightdrive_localization/mapping/brightdrive_mapping/config config_file:=<file>.yaml   # terminal 2
 ros2 run foxglove_bridge foxglove_bridge                                            # optional, port 8765
@@ -146,3 +223,10 @@ Image 3.25 GB; cold build about 4 min on this laptop (apt 146 s, clone 41 s, FAS
 
 - Used unmodified: FAST-LIO (OmerMersin/FAST_LIO_OUSTER, BSD, with hku-mars ikd-Tree), GTSAM 4.2.0, PCL, Eigen, tf2, rosbag2, foxglove_bridge.
 - Mine: everything under `mapping/brightdrive_mapping/` (Apache-2.0), the Docker `mapping` stage and compose service.
+
+## Localization
+
+An ESKF (`eskf/`) fuses IMU, GNSS and LiDAR-to-map matching (small_gicp VGICP against `town03_static.pcd`) in one
+ROS 2 C++ node, `localization_node`. All six scenarios pass live at 1.0x real time against the thresholds in
+`eval/loc_metrics.py`. Design, topics, health and how to run: [localization/README.md](localization/README.md);
+results and plots: [eval/results/README.md](eval/results/README.md).

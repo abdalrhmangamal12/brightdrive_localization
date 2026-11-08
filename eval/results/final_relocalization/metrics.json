@@ -1,0 +1,281 @@
+{
+ "bag": "/bags/loc_runs/final_relocalization",
+ "scenario": "relocalization",
+ "outputs": 5828,
+ "duration_s": 116.539997395,
+ "first_output_s": 3.4199999240000025,
+ "convergence_s": 3.4199999240000025,
+ "errors": {
+  "longitudinal_m": {
+   "n": 5828,
+   "rmse": 0.023982215520418102,
+   "mean_abs": 0.019076979080393467,
+   "p50": 0.015763092358604274,
+   "p95": 0.04759818477674921,
+   "p99": 0.06157659676912356,
+   "max": 0.10621538194542171
+  },
+  "lateral_m": {
+   "n": 5828,
+   "rmse": 0.02345087999120487,
+   "mean_abs": 0.018437430674470023,
+   "p50": 0.015007706800670994,
+   "p95": 0.0478615590937805,
+   "p99": 0.06162238471293442,
+   "max": 0.07363582806769581
+  },
+  "vertical_m": {
+   "n": 5828,
+   "rmse": 0.02702622709203332,
+   "mean_abs": 0.02093670135685709,
+   "p50": 0.01678612723869951,
+   "p95": 0.05554795484863253,
+   "p99": 0.07243436649185675,
+   "max": 0.09695412092180256
+  },
+  "horizontal_m": {
+   "n": 5828,
+   "rmse": 0.03354236774036198,
+   "mean_abs": 0.029277962802060797,
+   "p50": 0.026550415218837282,
+   "p95": 0.06054282013645987,
+   "p99": 0.07590327298637937,
+   "max": 0.11061589107959675
+  },
+  "heading_deg": {
+   "n": 5828,
+   "rmse": 0.0422521509075674,
+   "mean_abs": 0.03283968451826962,
+   "p50": 0.027360805274313865,
+   "p95": 0.08516827306237343,
+   "p99": 0.11391571463609663,
+   "max": 0.144304168135761
+  },
+  "ape_trans_rmse_m": 0.043075600802076244
+ },
+ "errors_whole_run": {
+  "horizontal_m": {
+   "n": 5828,
+   "rmse": 0.03354236774036198,
+   "mean_abs": 0.029277962802060797,
+   "p50": 0.026550415218837282,
+   "p95": 0.06054282013645987,
+   "p99": 0.07590327298637937,
+   "max": 0.11061589107959675
+  },
+  "heading_deg": {
+   "n": 5828,
+   "rmse": 0.0422521509075674,
+   "mean_abs": 0.03283968451826962,
+   "p50": 0.027360805274313865,
+   "p95": 0.08516827306237343,
+   "p99": 0.11391571463609663,
+   "max": 0.144304168135761
+  }
+ },
+ "latency_ms": {
+  "end_to_end": {
+   "n": 5829,
+   "rmse": 0.12378133244608107,
+   "mean_abs": 0.10335361554663962,
+   "p50": 0.0972747802734375,
+   "p95": 0.1749038696289061,
+   "p99": 0.22231101989746105,
+   "max": 2.9706954956054688
+  },
+  "recorder_clock": "wall",
+  "processing_max_reported": 0.702,
+  "processing": {
+   "n": 1203,
+   "rmse": 0.08949394997593002,
+   "mean_abs": 0.08513383208645053,
+   "p50": 0.09,
+   "p95": 0.122,
+   "p99": 0.15496000000000004,
+   "max": 0.255
+  },
+  "for_check": 0.22231101989746105
+ },
+ "sweeps": {
+  "matched": 2337,
+  "rejects": {
+   "accepted": 2335,
+   "too_few_points": 0,
+   "not_converged": 0,
+   "error_per_inlier": 2,
+   "inlier_ratio": 0,
+   "no_history": 0,
+   "jump": 0,
+   "age": 0,
+   "gated": 0
+  }
+ },
+ "nis_pose": {
+  "n": 2335,
+  "mean": 0.046103980442110414,
+  "share_above_95": 0.0,
+  "share_above_999": 0.0
+ },
+ "input_age_ms": {
+  "n": 2337,
+  "rmse": 45.28944513320331,
+  "mean_abs": 44.86521080421086,
+  "p50": 39.999999894071436,
+  "p95": 49.99999889409423,
+  "p99": 59.99999889408514,
+  "max": 79.99999789407752,
+  "trend_ms_per_min": 4.565095636484801,
+  "first_third_p50": 39.999998894074906,
+  "last_third_p50": 49.99999889406581
+ },
+ "match_time_ms": {
+  "n": 2337,
+  "rmse": 4.767318822058591,
+  "mean_abs": 4.476009350449295,
+  "p50": 4.136019999999999,
+  "p95": 7.5198794,
+  "p99": 9.964538879999987,
+  "max": 18.694336
+ },
+ "error_per_inlier": {
+  "n": 2335,
+  "rmse": 0.06606851248221432,
+  "mean_abs": 0.06584807317905454,
+  "p50": 0.06530557538759378,
+  "p95": 0.07672603791381959,
+  "p99": 0.0803462559726793,
+  "max": 0.10664746595601181
+ },
+ "inlier_ratio": {
+  "n": 2335,
+  "rmse": 0.9971407064418768,
+  "mean_abs": 0.9971379207584511,
+  "p50": 0.9978558776918057,
+  "p95": 0.9995976004621305,
+  "p99": 0.9998063850219484,
+  "max": 1.0
+ },
+ "status_last": {
+  "failures": "0",
+  "last_fail_reason": "-",
+  "init": "done",
+  "init_last_search": "t_scan 27.001, seed gnss, e/inl 0.068, second 0.241, 34 candidates, 3 distinct, yaw 88.0 deg, hint initialpose 118.0 deg, cog diff -, still no, v0 0.82 sigma 0.33 m/s, search 1098 ms",
+  "init_v0": "0.82",
+  "init_sigma_v": "0.33",
+  "init_elapsed_s": "-",
+  "init_timed_out": "no",
+  "init_searches": "1",
+  "init_confirm_failures": "0",
+  "init_last_confirm_failure": "-",
+  "time_to_tracking_s": "3.39",
+  "sweeps_skipped_no_imu": "0",
+  "sweeps_skipped_no_pose": "0",
+  "match.accepted": "2333",
+  "match.too_few_points": "0",
+  "match.not_converged": "0",
+  "match.error_per_inlier": "2",
+  "match.inlier_ratio": "0",
+  "match.no_history": "0",
+  "match.jump": "0",
+  "match.age": "0",
+  "match.gated": "0",
+  "gnss.accepted": "1162",
+  "gnss.gated": "17",
+  "gnss.exact": "1179",
+  "gnss.late": "0",
+  "gnss.held": "1",
+  "gnss.dropped": "0",
+  "initialpose": "yaw 118.0 deg at t 24.95 s, still since: no (gyro 1.597 rad/s)",
+  "sweeps_received": "2398",
+  "sweeps_dropped_busy": "21"
+ },
+ "health_timeline": [
+  [
+   0.0,
+   0.0,
+   "WAIT_DATA"
+  ],
+  [
+   0.01,
+   3.34,
+   "INITIALIZING"
+  ],
+  [
+   3.41,
+   119.94,
+   "TRACKING NOMINAL"
+  ]
+ ],
+ "failed_status_count": 0,
+ "relocalization": {
+  "init_offset_m": 5.0,
+  "init_heading_offset_deg": 30.0,
+  "final_10s_horizontal_m": {
+   "n": 501,
+   "rmse": 0.03412994830598504,
+   "mean_abs": 0.032271163767354505,
+   "p50": 0.033630299863267515,
+   "p95": 0.05016623967692035,
+   "p99": 0.057092393035534594,
+   "max": 0.05941725404667898
+  },
+  "final_10s_heading_deg": {
+   "n": 501,
+   "rmse": 0.03007877273631591,
+   "mean_abs": 0.025244302954532852,
+   "p50": 0.027438309289548976,
+   "p95": 0.05126623670203472,
+   "p99": 0.06585077982289833,
+   "max": 0.07191599957226807
+  }
+ },
+ "dynamics": {
+  "speed_max_mps": 8.140996256421964,
+  "yaw_rate_max_dps": 90.79504299387922,
+  "lat_accel_max_mps2": 12.0336317550337
+ },
+ "checks": [
+  {
+   "check": "convergence time [s]",
+   "value": 3.4199999240000025,
+   "threshold": 10.0,
+   "pass": true,
+   "why": "a bad initial pose is corrected within 10 s of data"
+  },
+  {
+   "check": "lateral p95 [m]",
+   "value": 0.0478615590937805,
+   "threshold": 0.2,
+   "pass": true,
+   "why": "lateral 95 % accuracy for a passenger car on a freeway lane (Reid et al. 2019)"
+  },
+  {
+   "check": "longitudinal p95 [m]",
+   "value": 0.04759818477674921,
+   "threshold": 0.48,
+   "pass": true,
+   "why": "longitudinal 95 % accuracy, same source; along-track error is less critical"
+  },
+  {
+   "check": "heading p95 [deg]",
+   "value": 0.08516827306237343,
+   "threshold": 0.5,
+   "pass": true,
+   "why": "0.5 deg at 20 m look-ahead is 0.17 m lateral, inside the lateral budget"
+  },
+  {
+   "check": "horizontal max [m]",
+   "value": 0.11061589107959675,
+   "threshold": 0.57,
+   "pass": true,
+   "why": "lateral alert limit (Reid et al. 2019): never leave the lane margin"
+  },
+  {
+   "check": "latency p99 [ms]",
+   "value": 0.22231101989746105,
+   "threshold": 20.0,
+   "pass": true,
+   "why": "one output period at 50 Hz: no consumer sees a pose older than one step"
+  }
+ ]
+}
