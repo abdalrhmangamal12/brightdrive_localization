@@ -75,9 +75,10 @@ sensors:
     frame_id: imu
     # The ROS 2 topic (sensor_msgs/Imu).
     topic: /imu/data
-    # Standard sensor QoS; each sample is one ~300 B packet, so loss is rare; verified 0 lost samples on 3 Nov
-    # (IMU count = /clock count); the ESKF subscriber must use depth 200 and flag dt gaps > 1.5 x tick.
-    queue_depth: 200
+    # Standard sensor QoS. Best effort never resends and volatile keeps nothing for late joiners, so the
+    # publisher's depth is irrelevant beyond 1; the subscriber side (localizer) buffers depth 200 (2 s) against
+    # executor stalls.
+    queue_depth: 5
     reliability: best_effort
     # IMU frame = base_link, no lever arm (simulation simplification).
     xyz: [0.0, 0.0, 0.0]

@@ -56,7 +56,7 @@ struct SweepReport {
 
 // A copy of everything the outputs need, taken under the lock.
 struct Output {
-  bool valid = false;  // false until the filter is initialized
+  bool valid = false;  // true only while TRACKING
   double t = 0.0;      // filter time = stamp of every output [s]
   Lifecycle lifecycle = Lifecycle::kWaitData;
   Health health = Health::kDeadReckoning;

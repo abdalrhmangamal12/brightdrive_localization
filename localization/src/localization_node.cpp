@@ -226,6 +226,13 @@ class LocalizationNode : public rclcpp::Node {
             [this](geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr
                        m) { initialPoseCallback(*m); });
 
+    // On the node clock (sim time follows /clock), not on the IMU: an IMU
+    // dropout is reported instead of silencing the status.
+    status_timer_ = rclcpp::create_timer(
+        this, get_clock(),
+        rclcpp::Duration::from_seconds(1.0 / np_.status_rate_hz),
+        [this]() { publishStatus(); });
+
     matcher_thread_ = std::thread([this]() { matcherLoop(); });
   }
 
@@ -276,6 +283,9 @@ class LocalizationNode : public rclcpp::Node {
     np_.publish_tf = declare_parameter<bool>("publish_tf", true);
     np_.output_every_n_imu = declare_parameter<int>("output_every_n_imu", 2);
     np_.status_rate_hz = declare_parameter<double>("status_rate_hz", 10.0);
+    if (!(np_.status_rate_hz > 0.0)) {
+      throw std::invalid_argument("status_rate_hz must be > 0");
+    }
     np_.debug = declare_parameter<bool>("debug", false);
     np_.publish_map = declare_parameter<bool>("publish_map", true);
 
@@ -457,7 +467,10 @@ class LocalizationNode : public rclcpp::Node {
     if (imu_count_ % static_cast<uint64_t>(np_.output_every_n_imu) == 0) {
       publishOutputs(entry);
     }
-    maybePublishStatus(s.t + cfg_.extrinsics.imu_time_offset_s);
+    have_imu_ = true;
+    last_imu_stamp_s_ = s.t;
+    // The status has its own timer; a lifecycle change goes out at once.
+    if (loc_->lifecycle() != last_status_lifecycle_) publishStatus();
   }
 
   void gnssCallback(const sensor_msgs::msg::NavSatFix& m) {
@@ -598,12 +611,21 @@ class LocalizationNode : public rclcpp::Node {
         std::max(max_output_latency_ms_, last_output_latency_ms_);
   }
 
-  void maybePublishStatus(double t) {
+  // At status_rate_hz on the node clock, and once at every lifecycle change.
+  void publishStatus() {
+    // Sim time reads 0 until the first /clock: no stamp, no age to report yet.
+    // A lifecycle change seen before that goes out with the next IMU sample.
+    const rclcpp::Time now = get_clock()->now();
+    if (now.nanoseconds() == 0) return;
     const Lifecycle lc = loc_->lifecycle();
-    const bool changed = lc != last_status_lifecycle_;
-    if (!changed && t - last_status_t_ < 1.0 / np_.status_rate_hz) return;
-    last_status_t_ = t;
     last_status_lifecycle_ = lc;
+    // IMU age on the node clock, against the raw message stamp; negative when
+    // the clock trails the data (a replayed bag whose /clock was recorded
+    // late). Past dr_timeout_s the status warns, past fail_timeout_s it is an
+    // error.
+    const double imu_age_s =
+        have_imu_ ? now.seconds() - last_imu_stamp_s_ : 0.0;
+    const bool imu_stale = have_imu_ && imu_age_s > cfg_.health.dr_timeout_s;
 
     diagnostic_msgs::msg::DiagnosticStatus st;
     st.name = "localization";
@@ -611,6 +633,7 @@ class LocalizationNode : public rclcpp::Node {
     std::string health = "-";
     std::string init = "-";
     std::string recovering = "no";
+    std::string filter_time = "-";
     for (const auto& [k, v] : loc_->statusValues()) {
       diagnostic_msgs::msg::KeyValue kv;
       kv.key = k;
@@ -619,6 +642,7 @@ class LocalizationNode : public rclcpp::Node {
       if (k == "health") health = v;
       if (k == "init") init = v;
       if (k == "recovering_from_failure") recovering = v;
+      if (k == "filter_time_s") filter_time = v;
     }
     {
       std::lock_guard<std::mutex> lk(slot_mtx_);
@@ -628,6 +652,12 @@ class LocalizationNode : public rclcpp::Node {
     addValue(st, "scan_convert_errors", std::to_string(scan_errors_.load()));
     addValue(st, "gnss_no_fix", std::to_string(gnss_no_fix_));
     char buf[32];
+    if (have_imu_) {
+      std::snprintf(buf, sizeof(buf), "%.2f", imu_age_s);
+      addValue(st, "imu_age_s", buf);
+    } else {
+      addValue(st, "imu_age_s", "none");
+    }
     std::snprintf(buf, sizeof(buf), "%.3f", last_output_latency_ms_);
     addValue(st, "output_latency_ms", buf);
     std::snprintf(buf, sizeof(buf), "%.3f", max_output_latency_ms_);
@@ -651,9 +681,24 @@ class LocalizationNode : public rclcpp::Node {
     } else {
       st.message = toString(lc);
     }
+    if (imu_stale) {
+      if (st.level != DS::ERROR) {
+        st.level =
+            imu_age_s > cfg_.health.fail_timeout_s ? DS::ERROR : DS::WARN;
+      }
+      std::snprintf(buf, sizeof(buf), "no IMU for %.1f s; ", imu_age_s);
+      st.message = buf + st.message;
+    }
 
     diagnostic_msgs::msg::DiagnosticArray arr;
-    arr.header.stamp = toStamp(t);
+    // The filter time while the filter runs: it predicts to every IMU sample,
+    // so that is the newest IMU stamp. Otherwise the node clock.
+    if (filter_time != "-" && !imu_stale) {
+      arr.header.stamp =
+          toStamp(last_imu_stamp_s_ + cfg_.extrinsics.imu_time_offset_s);
+    } else {
+      arr.header.stamp = now;
+    }
     arr.status.push_back(st);
     status_pub_->publish(arr);
 
@@ -716,6 +761,7 @@ class LocalizationNode : public rclcpp::Node {
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr
       status_pub_;
+  rclcpp::TimerBase::SharedPtr status_timer_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr match_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr health_pub_;
@@ -743,8 +789,9 @@ class LocalizationNode : public rclcpp::Node {
   // Executor-only state.
   uint64_t imu_count_ = 0;
   uint64_t gnss_no_fix_ = 0;
-  double last_status_t_ = -1e9;
   Lifecycle last_status_lifecycle_ = Lifecycle::kWaitData;
+  bool have_imu_ = false;
+  double last_imu_stamp_s_ = 0.0;  // raw header stamp of the newest sample
   double last_path_t_ = -1e9;
   nav_msgs::msg::Path path_;
   double last_output_latency_ms_ = 0.0;
