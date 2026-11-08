@@ -125,6 +125,24 @@ LocalizerConfig loadLocalizerConfig(const std::string& yaml_path) {
   c.init.timeout_s = r.get<double>("init.timeout_s");
   c.init.seed_gnss_max_age_s = r.get<double>("init.seed_gnss_max_age_s");
   c.init.still_window_s = r.get<double>("init.still_window_s");
+  c.init.max_seed_gnss_sigma_m = r.get<double>("init.max_seed_gnss_sigma_m");
+  c.init.vel_window_s = r.get<double>("init.vel_window_s");
+  c.init.vel_min_fixes = r.get<int>("init.vel_min_fixes");
+  c.init.vel_min_span_s = r.get<double>("init.vel_min_span_s");
+  c.init.vel_sigma_floor_mps = r.get<double>("init.vel_sigma_floor_mps");
+  c.init.still_max_gyro_radps = r.get<double>("init.still_max_gyro_radps");
+  c.init.still_max_acc_std_mps2 = r.get<double>("init.still_max_acc_std_mps2");
+  c.init.still_max_acc_mean_dev_mps2 =
+      r.get<double>("init.still_max_acc_mean_dev_mps2");
+  c.init.still_max_gnss_speed_mps =
+      r.get<double>("init.still_max_gnss_speed_mps");
+  c.init.still_gnss_speed_sigmas =
+      r.get<double>("init.still_gnss_speed_sigmas");
+  c.init.cog_min_speed_mps = r.get<double>("init.cog_min_speed_mps");
+  c.init.cog_check_min_speed_mps =
+      r.get<double>("init.cog_check_min_speed_mps");
+  c.init.cog_max_diff_deg = r.get<double>("init.cog_max_diff_deg");
+  c.init.carry_bg_max_radps = r.get<double>("init.carry_bg_max_radps");
   c.init.p0_sigma_pos_m = r.get<double>("init.p0_sigma_pos_m");
   c.init.p0_sigma_yaw_deg = r.get<double>("init.p0_sigma_yaw_deg");
   c.init.p0_sigma_rollpitch_deg = r.get<double>("init.p0_sigma_rollpitch_deg");

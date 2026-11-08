@@ -80,18 +80,32 @@
 
     # ---- initializer -----------------------------------------------------------------------------------------------
     init:
-      yaw_steps: 36                      # 10 deg grid on the coarse map
+      yaw_steps: 36                      # 10 deg grid on the coarse map, always searched in full
       refine_top: 3
-      margin: 0.1                        # inlier-ratio lead of the best over the second
+      margin: 0.1                        # error per inlier: the second distinct pose must be this much worse than the best
       confirm_n: 5                       # accepted matches in a row before TRACKING
-      timeout_s: 10.0
-      seed_gnss_max_age_s: 1.0           # a younger fix is the position seed; else /initialpose
-      still_window_s: 2.0                # gyro mean -> b_g on a cold start
+      timeout_s: 10.0                    # INITIALIZING longer than this: status WARN
+      seed_gnss_max_age_s: 1.0           # position seed = a fix at most this old with horizontal sigma <= max_seed_gnss_sigma_m;
+      max_seed_gnss_sigma_m: 2.0         #   else /initialpose if the car has been still since its stamp; else wait
+      vel_window_s: 1.0                  # GNSS velocity at init: least squares over the fixes of the last vel_window_s
+      vel_min_fixes: 5
+      vel_min_span_s: 0.5                # first to last fix
+      vel_sigma_floor_mps: 0.2           # its sigma = fix sigma / sqrt(sum (t - t_mean)^2), at least this
+      still_window_s: 2.0                # still test window before the sweep; b_g = gyro mean when still
+      still_max_gyro_radps: 0.05         # every sample (CARLA: noise 0.005, bias <= 0.002)
+      still_max_acc_std_mps2: 0.2        # spread of |acc| (noise 0.05)
+      still_max_acc_mean_dev_mps2: 0.1   # |mean |acc| - |g||
+      still_max_gnss_speed_mps: 0.3      # GNSS speed bound = max(this, still_gnss_speed_sigmas x sigma of the GNSS velocity):
+      still_gnss_speed_sigmas: 3.0       #   a standing car's 1 s fit reads 0.55 m/s median, 0.91 max (sigma 0.33)
+      cog_min_speed_mps: 3.0             # above: the yaw hint is the GNSS course over ground; else /initialpose yaw; else none
+      cog_check_min_speed_mps: 5.0       # above: a winner further than cog_max_diff_deg from the course is rejected
+      cog_max_diff_deg: 20.0
+      carry_bg_max_radps: 0.1            # a discarded filter's b_g seeds the next start only below this on every axis
       p0_sigma_pos_m: 0.3
       p0_sigma_yaw_deg: 5.0
       p0_sigma_rollpitch_deg: 2.0
-      p0_sigma_vel_mps: 0.5
-      p0_sigma_vel_moving_mps: 10.0      # no still window seen, or re-init after FAILED
+      p0_sigma_vel_mps: 0.5              # still: v0 = 0
+      p0_sigma_vel_moving_mps: 10.0      # moving without a GNSS velocity: v0 = 0 (with it: v0 and sigma from the fit)
       p0_sigma_ba: 0.1
       p0_sigma_bg: 0.005
 

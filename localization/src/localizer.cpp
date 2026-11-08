@@ -18,11 +18,6 @@ using Clock = std::chrono::steady_clock;
 // Two stamps closer than this are the same instant.
 constexpr double kSameTime = 1e-9;
 constexpr double kDeg = M_PI / 180.0;
-// Over the still window the car counts as standing when no gyro sample
-// exceeds this rate and the specific-force magnitude barely varies (CARLA:
-// gyro noise 0.005 rad/s, bias <= 0.002 rad/s, accel noise 0.05 m/s^2).
-constexpr double kStillMaxGyro = 0.05;   // [rad/s]
-constexpr double kStillMaxAccStd = 0.2;  // [m/s^2]
 
 const LocalizerConfig& checked(const LocalizerConfig& c) {
   validate(c);
@@ -46,6 +41,24 @@ std::string fmt(const char* f, double v) {
   return buf;
 }
 
+// Per-axis horizontal sigma of a fix [m].
+double horizontalSigma(const Eigen::Matrix3d& V) {
+  return std::sqrt(0.5 * (V(0, 0) + V(1, 1)));
+}
+
+std::string describe(const StillWindow& w) {
+  char buf[160];
+  std::snprintf(buf, sizeof(buf), "gyro %.3f, acc std %.3f, |acc|-g %.3f",
+                w.gyro_max, w.acc_std, w.acc_mean_dev);
+  std::string d = buf;
+  if (w.gnss_used) {
+    std::snprintf(buf, sizeof(buf), ", gnss %.2f/%.2f m/s", w.gnss_speed,
+                  w.gnss_bound);
+    d += buf;
+  }
+  return (w.still ? "yes (" : "no: " + w.why + " (") + d + ")";
+}
+
 }  // namespace
 
 Localizer::Localizer(const LocalizerConfig& cfg)
@@ -55,7 +68,7 @@ Localizer::Localizer(const LocalizerConfig& cfg)
       T_lidar_imu_(T_imu_lidar_.inverse()),
       V_pose_(Matrix6d::Zero()),
       deskewer_(T_imu_lidar_),
-      initializer_(cfg.init, cfg.accept, cfg.eskf.lever_arm, T_imu_lidar_),
+      initializer_(cfg.init, cfg.accept, T_imu_lidar_, cfg.eskf.g.norm()),
       health_(cfg.health),
       eskf_(cfg.eskf),
       history_(cfg.history.keep_s) {
@@ -82,10 +95,15 @@ void Localizer::onImu(const eskf::ImuSample& s_in) {
       init_start_t_ = s.t;
     }
     have_imu_ = true;
+    last_imu_t_ = s.t;
     last_gyro_ = s.gyro;
+    if (have_initialpose_ && s.t >= initialpose_t_ - kSameTime) {
+      initialpose_still_.add(s);
+    }
     if (lifecycle_ == Lifecycle::kWaitData) {
       lifecycle_ = Lifecycle::kInitializing;
-      init_state_ = "waiting for GNSS";
+      init_phase_start_t_ = s.t;
+      init_state_ = "waiting for GNSS or /initialpose";
     }
     if (filter_active_) {
       predictLocked(s);
@@ -113,7 +131,19 @@ void Localizer::onInitialPose(const Eigen::Isometry3d& T_map_base,
   std::lock_guard<std::mutex> lk(mtx_);
   have_initialpose_ = true;
   initialpose_t_ = t;
-  initialpose_yaw_ = yawOf(T_map_base.linear());
+  initialpose_T_map_base_ = T_map_base;
+  // The samples since the stamp that already arrived are in the history; when
+  // it no longer reaches back to the stamp (or to the first sample, for a
+  // stamp older than the node), stillness since then cannot be checked.
+  initialpose_still_ = ImuStillSums();
+  initialpose_covered_ =
+      !have_imu_ ||
+      (history_.hasEvents() &&
+       history_.oldestEvent() <= std::max(t, init_start_t_) + kSameTime);
+  if (!have_imu_) return;
+  for (const Event& e : history_.eventsAfter(t - kSameTime)) {
+    if (e.kind == Event::Kind::kImu) initialpose_still_.add(e.imu);
+  }
 }
 
 // ---- filter steps (mtx_ held)
@@ -278,6 +308,12 @@ SweepReport Localizer::trackSweep(Scan scan, const ScanMatcher& matcher) {
       }
     } else {
       ++init_confirm_failures_;
+      char buf[160];
+      std::snprintf(buf, sizeof(buf),
+                    "sweep %d at t %.3f: %s, e/inl %.3f, nis %.2f, age %.0f ms",
+                    confirm_count_ + 1, t_ref, toString(rep.reject),
+                    m.errorPerInlier(), rep.nis, rep.age_s * 1e3);
+      last_confirm_failure_ = buf;
       discardFilterLocked(std::string("confirmation failed: ") +
                           toString(rep.reject));
     }
@@ -286,7 +322,16 @@ SweepReport Localizer::trackSweep(Scan scan, const ScanMatcher& matcher) {
 }
 
 void Localizer::discardFilterLocked(const std::string& why) {
-  b_g_prev_ = eskf_.state().b_g;
+  // A diverged filter's gyro bias would spoil the next start: keep it only
+  // when it is finite and plausible.
+  const Eigen::Vector3d b_g = eskf_.state().b_g;
+  b_g_prev_ = b_g.allFinite() &&
+                      (b_g.array().abs() < cfg_.init.carry_bg_max_radps).all()
+                  ? b_g
+                  : Eigen::Vector3d::Zero();
+  // The init timeout counts from leaving TRACKING, not from a failed
+  // confirmation.
+  if (lifecycle_ == Lifecycle::kTracking) init_phase_start_t_ = last_imu_t_;
   filter_active_ = false;
   confirming_ = false;
   confirm_count_ = 0;
@@ -372,9 +417,12 @@ void Localizer::onMatchLocked(const MatchResult& m, double t_ref,
   ++reject_counts_[static_cast<size_t>(code)];
 }
 
-// Initialization: seed from the latest GNSS fix (and the /initialpose heading
-// as a hint), search on this raw sweep, initialize at the sweep time, catch up
-// with the stored raw events, then confirm through the normal update.
+// Initialization: position seed from a recent GNSS fix (else /initialpose if
+// the car has not moved since it was given), heading hint from the GNSS course
+// at speed (else the /initialpose heading), search on this raw sweep,
+// initialize at the sweep time with v0 from the still test or the GNSS
+// velocity, catch up with the stored raw events, then confirm through the
+// normal update.
 SweepReport Localizer::initSweep(Scan scan, const ScanMatcher& matcher) {
   SweepReport rep;
   rep.kind = SweepReport::Kind::kNotReady;
@@ -384,13 +432,56 @@ SweepReport Localizer::initSweep(Scan scan, const ScanMatcher& matcher) {
 
   InitSeed seed;
   StillWindow still;
+  GnssVelocity gv;
+  InitVelocity v0;
   {
     std::lock_guard<std::mutex> lk(mtx_);
     if (!have_imu_) return rep;
-    if (!have_fix_ ||
-        std::abs(latest_fix_.t - t_scan) > ini.seed_gnss_max_age_s) {
-      init_state_ = "waiting for GNSS";
-      return rep;
+    // The raw inputs before the sweep: fixes for the GNSS velocity, IMU
+    // samples for the still test.
+    std::vector<eskf::GnssMeas> fixes;
+    std::vector<eskf::ImuSample> imu;
+    const double t_from =
+        t_scan - std::max(ini.still_window_s, ini.vel_window_s) - kSameTime;
+    for (const Event& e : history_.eventsAfter(t_from)) {
+      if (e.t > t_scan + kSameTime) break;  // time order
+      if (e.kind == Event::Kind::kGnss) {
+        if (e.t >= t_scan - ini.vel_window_s - kSameTime) {
+          fixes.push_back(e.gnss);
+        }
+      } else if (e.t >= t_scan - ini.still_window_s - kSameTime) {
+        imu.push_back(e.imu);
+      }
+    }
+    gv = initializer_.gnssVelocity(fixes);
+
+    // Position seed.
+    const double fix_age = std::abs(latest_fix_.t - t_scan);
+    const double fix_sigma = horizontalSigma(latest_fix_.V);
+    if (have_fix_ && fix_age <= ini.seed_gnss_max_age_s &&
+        fix_sigma <= ini.max_seed_gnss_sigma_m) {
+      seed.source = SeedSource::kGnss;
+      seed.p_map = latest_fix_.z;  // raw antenna position
+      seed.p_imu = cfg_.eskf.lever_arm;
+    } else {
+      std::string why = !have_fix_ ? "no fix"
+                        : fix_age > ini.seed_gnss_max_age_s
+                            ? fmt("fix %.1f s old", fix_age)
+                            : fmt("fix sigma %.1f m", fix_sigma);
+      const StillWindow ip =
+          initializer_.still(initialpose_still_, 0.0, nullptr);
+      if (have_initialpose_ && initialpose_covered_ && ip.still) {
+        seed.source = SeedSource::kInitialPose;
+        seed.p_map = initialpose_T_map_base_.translation();
+        seed.p_imu = T_imu_base_.translation();
+      } else {
+        why += !have_initialpose_ ? "; no /initialpose"
+               : !initialpose_covered_
+                   ? "; /initialpose older than the IMU history"
+                   : "; moved since /initialpose: " + ip.why;
+        init_state_ = "waiting for GNSS or /initialpose (" + why + ")";
+        return rep;
+      }
     }
     // The still window must be in the history before the first search, so a
     // cold start sees the car standing and takes b_g from it.
@@ -399,13 +490,35 @@ SweepReport Localizer::initSweep(Scan scan, const ScanMatcher& matcher) {
       init_state_ = "waiting for the IMU window";
       return rep;
     }
-    seed.fix = latest_fix_;  // raw antenna position
-    if (have_initialpose_) seed.yaw_hint = initialpose_yaw_;
-    std::vector<eskf::ImuSample> imu;
-    for (const Event& e : history_.eventsAfter(t_scan - ini.still_window_s)) {
-      if (e.kind == Event::Kind::kImu && e.t <= t_scan) imu.push_back(e.imu);
+    still = initializer_.stillWindow(imu, gv);
+    v0 = initializer_.initVelocity(still, gv);
+
+    // Heading hint (IMU yaw): the GNSS course at speed, else the /initialpose
+    // heading. Every heading of the grid is searched either way.
+    const Eigen::Matrix3d R_base_imu = cfg_.extrinsics.T_base_imu.linear();
+    if (gv.ok) {
+      // Course over ground = heading of base_link driving forward.
+      const Eigen::Matrix3d R_cog =
+          Eigen::AngleAxisd(std::atan2(gv.v.y(), gv.v.x()),
+                            Eigen::Vector3d::UnitZ())
+              .toRotationMatrix();
+      seed.cog = yawOf(R_cog * R_base_imu);
+      seed.speed = gv.speed();
     }
-    still = initializer_.stillWindow(imu);
+    if (seed.cog && seed.speed > ini.cog_min_speed_mps) {
+      seed.yaw_hint = seed.cog;
+      seed.yaw_hint_source = YawHintSource::kCog;
+    } else if (have_initialpose_) {
+      seed.yaw_hint = yawOf(initialpose_T_map_base_.linear() * R_base_imu);
+      seed.yaw_hint_source = YawHintSource::kInitialPose;
+    }
+
+    last_seed_source_ = toString(seed.source);
+    last_yaw_hint_source_ = toString(seed.yaw_hint_source);
+    last_still_ = describe(still);
+    have_init_velocity_ = true;
+    last_v0_mps_ = v0.v.norm();
+    last_sigma_v_mps_ = v0.sigma;
     ++init_searches_;
     init_state_ = "searching";
   }
@@ -417,15 +530,19 @@ SweepReport Localizer::initSweep(Scan scan, const ScanMatcher& matcher) {
   rep.match = r.match;
 
   std::lock_guard<std::mutex> lk(mtx_);
-  char buf[256];
+  char buf[400];
   std::snprintf(
       buf, sizeof(buf),
-      "e/inl %.3f, second %.3f, %d candidates, %d distinct, yaw %.1f "
-      "deg, hint %s, search %.0f ms%s%s",
-      r.error_per_inlier, r.second_error_per_inlier, r.candidates, r.distinct,
-      yawOf(r.T_map_imu.linear()) / kDeg,
-      seed.yaw_hint ? fmt("%.1f deg", *seed.yaw_hint / kDeg).c_str() : "none",
-      r.search_ms, r.found ? "" : ": ", r.found ? "" : r.reason.c_str());
+      "t_scan %.3f, seed %s, e/inl %.3f, second %.3f, %d candidates, %d "
+      "distinct, yaw %.1f deg, hint %s %s, cog diff %s, still %s, v0 %.2f "
+      "sigma %.2f m/s, search %.0f ms%s%s",
+      t_scan, toString(seed.source), r.error_per_inlier,
+      r.second_error_per_inlier, r.candidates, r.distinct,
+      yawOf(r.T_map_imu.linear()) / kDeg, toString(seed.yaw_hint_source),
+      seed.yaw_hint ? fmt("%.1f deg", *seed.yaw_hint / kDeg).c_str() : "-",
+      r.cog_diff_deg >= 0.0 ? fmt("%.1f deg", r.cog_diff_deg).c_str() : "-",
+      still.still ? "yes" : "no", v0.v.norm(), v0.sigma, r.search_ms,
+      r.found ? "" : ": ", r.found ? "" : r.reason.c_str());
   init_last_result_ = buf;
   if (!r.found) {
     rep.kind = SweepReport::Kind::kStartFailed;
@@ -438,8 +555,8 @@ SweepReport Localizer::initSweep(Scan scan, const ScanMatcher& matcher) {
     return rep;
   }
 
-  const eskf::NominalState x0 = initializer_.x0(r, still, b_g_prev_);
-  eskf_.initialize(x0, initializer_.P0(still), t_scan);
+  const eskf::NominalState x0 = initializer_.x0(r, still, v0, b_g_prev_);
+  eskf_.initialize(x0, initializer_.P0(v0), t_scan);
   health_.reset(t_scan);
   history_.clearPoses();
   history_.pushPose(t_scan, x0);
@@ -458,8 +575,10 @@ SweepReport Localizer::initSweep(Scan scan, const ScanMatcher& matcher) {
     }
   }
   init_state_ = "confirming 0/" + std::to_string(ini.confirm_n) +
-                (still.still ? " (still: b_g from the gyro mean)"
-                             : " (moving: large sigma_v)");
+                (still.still ? " (still: v0 = 0, b_g from the gyro mean)"
+                 : gv.ok ? fmt(" (moving: v0 %.2f m/s from GNSS)", v0.v.norm())
+                         : fmt(" (moving, no GNSS velocity: sigma_v %.0f m/s)",
+                               v0.sigma));
   rep.kind = SweepReport::Kind::kStarted;
   return rep;
 }
@@ -556,9 +675,24 @@ std::vector<std::pair<std::string, std::string>> Localizer::statusValues()
   kv.emplace_back("recovering_from_failure", recovering_ ? "yes" : "no");
   kv.emplace_back("init", init_state_);
   kv.emplace_back("init_last_search", init_last_result_);
+  kv.emplace_back("seed_source", last_seed_source_);
+  kv.emplace_back("yaw_hint_source", last_yaw_hint_source_);
+  kv.emplace_back("still", last_still_);
+  kv.emplace_back("init_v0",
+                  have_init_velocity_ ? fmt("%.2f", last_v0_mps_) : "-");
+  kv.emplace_back("init_sigma_v",
+                  have_init_velocity_ ? fmt("%.2f", last_sigma_v_mps_) : "-");
+  const bool initializing = lifecycle_ == Lifecycle::kInitializing;
+  const double init_elapsed = last_imu_t_ - init_phase_start_t_;
+  kv.emplace_back("init_elapsed_s",
+                  initializing ? fmt("%.1f", init_elapsed) : "-");
+  kv.emplace_back(
+      "init_timed_out",
+      initializing && init_elapsed > cfg_.init.timeout_s ? "yes" : "no");
   kv.emplace_back("init_searches", std::to_string(init_searches_));
   kv.emplace_back("init_confirm_failures",
                   std::to_string(init_confirm_failures_));
+  kv.emplace_back("init_last_confirm_failure", last_confirm_failure_);
   kv.emplace_back("time_to_tracking_s", time_to_tracking_s_ >= 0.0
                                             ? fmt("%.2f", time_to_tracking_s_)
                                             : "-");
@@ -599,11 +733,16 @@ std::vector<std::pair<std::string, std::string>> Localizer::statusValues()
   kv.emplace_back("gnss.late", std::to_string(gnss_late_));
   kv.emplace_back("gnss.held", std::to_string(gnss_held_));
   kv.emplace_back("gnss.dropped", std::to_string(gnss_dropped_));
-  kv.emplace_back("initialpose",
-                  have_initialpose_
-                      ? fmt("yaw %.1f deg", initialpose_yaw_ / kDeg) +
-                            fmt(" at t %.2f s", initialpose_t_)
-                      : "-");
+  std::string ip = "-";
+  if (have_initialpose_) {
+    const StillWindow w = initializer_.still(initialpose_still_, 0.0, nullptr);
+    ip = fmt("yaw %.1f deg", yawOf(initialpose_T_map_base_.linear()) / kDeg) +
+         fmt(" at t %.2f s, still since: ", initialpose_t_) +
+         (!initialpose_covered_ ? "unknown (older than the IMU history)"
+          : w.still             ? "yes"
+                                : "no (" + w.why + ")");
+  }
+  kv.emplace_back("initialpose", ip);
   return kv;
 }
 

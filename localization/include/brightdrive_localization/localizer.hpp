@@ -138,12 +138,17 @@ class Localizer {
   std::deque<eskf::GnssMeas> held_gnss_;  // fixes newer than the filter
 
   bool have_imu_ = false;
+  double last_imu_t_ = 0.0;
   Eigen::Vector3d last_gyro_ = Eigen::Vector3d::Zero();
   bool have_fix_ = false;
   eskf::GnssMeas latest_fix_;
   bool have_initialpose_ = false;
   double initialpose_t_ = 0.0;
-  double initialpose_yaw_ = 0.0;
+  Eigen::Isometry3d initialpose_T_map_base_ = Eigen::Isometry3d::Identity();
+  // Every IMU sample since the /initialpose stamp, for "still since then";
+  // not covered when the history no longer reached back to the stamp.
+  ImuStillSums initialpose_still_;
+  bool initialpose_covered_ = false;
 
   // Health, evaluated after every IMU step while tracking.
   Health health_now_ = Health::kNominal;
@@ -164,6 +169,15 @@ class Localizer {
   long sweeps_skipped_no_pose_ = 0;
   long init_searches_ = 0;
   long init_confirm_failures_ = 0;
+  std::string last_confirm_failure_ = "-";
+  double init_phase_start_t_ = 0.0;  // when INITIALIZING began (IMU time)
+  // The last search's inputs.
+  std::string last_seed_source_ = "-";
+  std::string last_yaw_hint_source_ = "-";
+  std::string last_still_ = "-";
+  bool have_init_velocity_ = false;
+  double last_v0_mps_ = 0.0;
+  double last_sigma_v_mps_ = 0.0;
   bool have_init_start_t_ = false;
   double init_start_t_ =
       0.0;  // first IMU sample: the clock of time_to_tracking

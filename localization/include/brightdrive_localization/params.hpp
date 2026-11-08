@@ -70,19 +70,43 @@ struct HistoryConfig {
 };
 
 struct InitConfig {
-  int yaw_steps = 0;    // headings tried at the seed on the coarse map
-  int refine_top = 0;   // best candidates refined on the fine map
-  double margin = 0.0;  // inlier-ratio lead of the best over the second
-  int confirm_n = 0;    // accepted matches in a row before TRACKING
-  double timeout_s = 0.0;
-  double seed_gnss_max_age_s = 0.0;  // a younger fix is the position seed
-  double still_window_s = 0.0;       // gyro mean -> b_g on a cold start
+  int yaw_steps = 0;       // headings tried at the seed on the coarse map
+  int refine_top = 0;      // best candidates refined on the fine map
+  double margin = 0.0;     // error-per-inlier lead of the best over the second
+                           // distinct pose (lower error is better)
+  int confirm_n = 0;       // accepted matches in a row before TRACKING
+  double timeout_s = 0.0;  // INITIALIZING longer than this: status warning
+  // Position seed: a fix at most this old with at most this horizontal sigma;
+  // else /initialpose when the car has been still since its stamp.
+  double seed_gnss_max_age_s = 0.0;
+  double max_seed_gnss_sigma_m = 0.0;
+  // GNSS velocity at init: least squares over the fixes of the window.
+  double vel_window_s = 0.0;
+  int vel_min_fixes = 0;
+  double vel_min_span_s = 0.0;       // first to last fix
+  double vel_sigma_floor_mps = 0.0;  // lower bound of its sigma
+  // Still test over the window before the sweep; b_g = gyro mean when still.
+  double still_window_s = 0.0;
+  double still_max_gyro_radps = 0.0;         // every sample
+  double still_max_acc_std_mps2 = 0.0;       // spread of |acc|
+  double still_max_acc_mean_dev_mps2 = 0.0;  // |mean |acc| - |g||
+  // GNSS speed bound = max(still_max_gnss_speed_mps, still_gnss_speed_sigmas
+  // * sigma of the GNSS velocity): the 1 s fit alone is ~0.33 m/s noisy.
+  double still_max_gnss_speed_mps = 0.0;
+  double still_gnss_speed_sigmas = 0.0;
+  // Heading: above cog_min_speed_mps the yaw hint is the GNSS course over
+  // ground; above cog_check_min_speed_mps a winner further than
+  // cog_max_diff_deg from it is rejected.
+  double cog_min_speed_mps = 0.0;
+  double cog_check_min_speed_mps = 0.0;
+  double cog_max_diff_deg = 0.0;
+  // A discarded filter's b_g seeds the next start only below this, per axis.
+  double carry_bg_max_radps = 0.0;
   double p0_sigma_pos_m = 0.0;
   double p0_sigma_yaw_deg = 0.0;
   double p0_sigma_rollpitch_deg = 0.0;
-  double p0_sigma_vel_mps = 0.0;  // car still at init
-  double p0_sigma_vel_moving_mps =
-      0.0;  // no still window seen, or re-init after FAILED
+  double p0_sigma_vel_mps = 0.0;         // the still test says standing
+  double p0_sigma_vel_moving_mps = 0.0;  // moving, no GNSS velocity
   double p0_sigma_ba = 0.0;
   double p0_sigma_bg = 0.0;
 };

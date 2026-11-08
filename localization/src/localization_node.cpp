@@ -355,6 +355,25 @@ class LocalizationNode : public rclcpp::Node {
     c.init.timeout_s = requiredDouble("init.timeout_s");
     c.init.seed_gnss_max_age_s = requiredDouble("init.seed_gnss_max_age_s");
     c.init.still_window_s = requiredDouble("init.still_window_s");
+    c.init.max_seed_gnss_sigma_m = requiredDouble("init.max_seed_gnss_sigma_m");
+    c.init.vel_window_s = requiredDouble("init.vel_window_s");
+    c.init.vel_min_fixes = requiredInt("init.vel_min_fixes");
+    c.init.vel_min_span_s = requiredDouble("init.vel_min_span_s");
+    c.init.vel_sigma_floor_mps = requiredDouble("init.vel_sigma_floor_mps");
+    c.init.still_max_gyro_radps = requiredDouble("init.still_max_gyro_radps");
+    c.init.still_max_acc_std_mps2 =
+        requiredDouble("init.still_max_acc_std_mps2");
+    c.init.still_max_acc_mean_dev_mps2 =
+        requiredDouble("init.still_max_acc_mean_dev_mps2");
+    c.init.still_max_gnss_speed_mps =
+        requiredDouble("init.still_max_gnss_speed_mps");
+    c.init.still_gnss_speed_sigmas =
+        requiredDouble("init.still_gnss_speed_sigmas");
+    c.init.cog_min_speed_mps = requiredDouble("init.cog_min_speed_mps");
+    c.init.cog_check_min_speed_mps =
+        requiredDouble("init.cog_check_min_speed_mps");
+    c.init.cog_max_diff_deg = requiredDouble("init.cog_max_diff_deg");
+    c.init.carry_bg_max_radps = requiredDouble("init.carry_bg_max_radps");
     c.init.p0_sigma_pos_m = requiredDouble("init.p0_sigma_pos_m");
     c.init.p0_sigma_yaw_deg = requiredDouble("init.p0_sigma_yaw_deg");
     c.init.p0_sigma_rollpitch_deg =
@@ -436,6 +455,19 @@ class LocalizationNode : public rclcpp::Node {
                 c.history.keep_s, i.yaw_steps, i.refine_top, i.margin,
                 i.confirm_n, i.timeout_s, i.seed_gnss_max_age_s,
                 i.still_window_s);
+    RCLCPP_INFO(get_logger(),
+                "init: gnss seed sigma <= %.1f m; gnss velocity over %.1f s, "
+                ">= %d fixes spanning %.1f s, sigma floor %.2f m/s; still: "
+                "gyro < %.3f rad/s, acc std < %.2f, |acc|-g < %.2f m/s^2, "
+                "gnss speed < max(%.2f m/s, %.1f sigma); cog hint above %.1f "
+                "m/s, check above %.1f m/s at %.0f deg; carry b_g below %.2f "
+                "rad/s",
+                i.max_seed_gnss_sigma_m, i.vel_window_s, i.vel_min_fixes,
+                i.vel_min_span_s, i.vel_sigma_floor_mps, i.still_max_gyro_radps,
+                i.still_max_acc_std_mps2, i.still_max_acc_mean_dev_mps2,
+                i.still_max_gnss_speed_mps, i.still_gnss_speed_sigmas,
+                i.cog_min_speed_mps, i.cog_check_min_speed_mps,
+                i.cog_max_diff_deg, i.carry_bg_max_radps);
     RCLCPP_INFO(get_logger(),
                 "P0: pos %.2f m, yaw %.1f deg, roll/pitch %.1f deg, vel %.2f "
                 "(moving %.1f) m/s, b_a %.3f, b_g %.4f",
@@ -634,6 +666,8 @@ class LocalizationNode : public rclcpp::Node {
     std::string init = "-";
     std::string recovering = "no";
     std::string filter_time = "-";
+    std::string init_elapsed = "-";
+    bool init_timed_out = false;
     for (const auto& [k, v] : loc_->statusValues()) {
       diagnostic_msgs::msg::KeyValue kv;
       kv.key = k;
@@ -643,6 +677,8 @@ class LocalizationNode : public rclcpp::Node {
       if (k == "init") init = v;
       if (k == "recovering_from_failure") recovering = v;
       if (k == "filter_time_s") filter_time = v;
+      if (k == "init_elapsed_s") init_elapsed = v;
+      if (k == "init_timed_out") init_timed_out = v == "yes";
     }
     {
       std::lock_guard<std::mutex> lk(slot_mtx_);
@@ -665,8 +701,11 @@ class LocalizationNode : public rclcpp::Node {
 
     using DS = diagnostic_msgs::msg::DiagnosticStatus;
     if (lc != Lifecycle::kTracking) {
-      // Initializing again after a FAILED is an error; a cold start is not.
-      st.level = recovering == "yes" ? DS::ERROR : DS::STALE;
+      // Initializing again after a FAILED is an error; a cold start is not,
+      // until it takes longer than init.timeout_s.
+      st.level = recovering == "yes" ? DS::ERROR
+                 : init_timed_out    ? DS::WARN
+                                     : DS::STALE;
     } else if (health == "NOMINAL") {
       st.level = DS::OK;
     } else if (health == "FAILED") {
@@ -677,7 +716,9 @@ class LocalizationNode : public rclcpp::Node {
     if (lc == Lifecycle::kTracking) {
       st.message = "TRACKING " + health;
     } else if (lc == Lifecycle::kInitializing) {
-      st.message = "initializing: " + init;
+      st.message = init_timed_out ? "initializing for " + init_elapsed +
+                                        " s (over the timeout): " + init
+                                  : "initializing: " + init;
     } else {
       st.message = toString(lc);
     }

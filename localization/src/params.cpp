@@ -90,7 +90,35 @@ void validate(const LocalizerConfig& c) {
   positive(i.confirm_n, "init.confirm_n");
   positive(i.timeout_s, "init.timeout_s");
   positive(i.seed_gnss_max_age_s, "init.seed_gnss_max_age_s");
+  positive(i.max_seed_gnss_sigma_m, "init.max_seed_gnss_sigma_m");
+  positive(i.vel_window_s, "init.vel_window_s");
+  positive(i.vel_min_fixes, "init.vel_min_fixes");
+  if (i.vel_min_fixes < 2) {
+    throw std::invalid_argument(
+        "localization.yaml: init.vel_min_fixes must be >= 2");
+  }
+  positive(i.vel_min_span_s, "init.vel_min_span_s");
+  if (i.vel_min_span_s > i.vel_window_s) {
+    throw std::invalid_argument(
+        "localization.yaml: init.vel_min_span_s must not exceed "
+        "init.vel_window_s");
+  }
+  positive(i.vel_sigma_floor_mps, "init.vel_sigma_floor_mps");
   positive(i.still_window_s, "init.still_window_s");
+  positive(i.still_max_gyro_radps, "init.still_max_gyro_radps");
+  positive(i.still_max_acc_std_mps2, "init.still_max_acc_std_mps2");
+  positive(i.still_max_acc_mean_dev_mps2, "init.still_max_acc_mean_dev_mps2");
+  positive(i.still_max_gnss_speed_mps, "init.still_max_gnss_speed_mps");
+  positive(i.still_gnss_speed_sigmas, "init.still_gnss_speed_sigmas");
+  positive(i.cog_min_speed_mps, "init.cog_min_speed_mps");
+  positive(i.cog_check_min_speed_mps, "init.cog_check_min_speed_mps");
+  if (i.cog_check_min_speed_mps < i.cog_min_speed_mps) {
+    throw std::invalid_argument(
+        "localization.yaml: init.cog_check_min_speed_mps must not be below "
+        "init.cog_min_speed_mps");
+  }
+  positive(i.cog_max_diff_deg, "init.cog_max_diff_deg");
+  positive(i.carry_bg_max_radps, "init.carry_bg_max_radps");
   positive(i.p0_sigma_pos_m, "init.p0_sigma_pos_m");
   positive(i.p0_sigma_yaw_deg, "init.p0_sigma_yaw_deg");
   positive(i.p0_sigma_rollpitch_deg, "init.p0_sigma_rollpitch_deg");
