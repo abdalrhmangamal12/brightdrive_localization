@@ -1,0 +1,169 @@
+{
+ "mapping_bag": "/bags/mapping_20261105_070252",
+ "reverse_bag": "/bags/reverse_reuse_20261107_153511",
+ "map_yaml": "/maps/town03_static.yaml",
+ "mapping": {
+  "path_m": 3914.4010023965598,
+  "drive_s": 568.589987291,
+  "still_before_s": 5.219999883000014,
+  "stopped_s": 52.239998831999515,
+  "speed_median_mps": 7.884245249157987,
+  "speed_max_mps": 8.322798895840743,
+  "laps": 2,
+  "lap_m": [
+   1957.5050150144232,
+   1956.501703127303
+  ],
+  "first_lap_driven_n_times_pct": {
+   "2": 98.46743295019157,
+   "3": 0.22988505747126436,
+   "4": 1.3026819923371646
+  },
+  "extra_pass_stretches": [
+   {
+    "kind": "same direction, another lane",
+    "lap_s_m": [
+     445.5699455153893,
+     557.5132800901241
+    ],
+    "from": [
+     6.65125846862793,
+     -119.71345520019531
+    ],
+    "to": [
+     16.462051391601562,
+     -10.0703706741333
+    ],
+    "passes_same": 4,
+    "passes_opposite": 0
+   },
+   {
+    "kind": "same direction, another lane",
+    "lap_s_m": [
+     1759.0743940424334,
+     1873.0781865242377
+    ],
+    "from": [
+     0.6672267913818359,
+     -120.20201110839844
+    ],
+    "to": [
+     16.886802673339844,
+     -10.710917472839355
+    ],
+    "passes_same": 4,
+    "passes_opposite": 0
+   },
+   {
+    "kind": "both directions",
+    "lap_s_m": [
+     705.0765572958973,
+     829.5673972913727
+    ],
+    "from": [
+     16.070524215698242,
+     132.6396026611328
+    ],
+    "to": [
+     140.36668395996094,
+     130.98080444335938
+    ],
+    "passes_same": 2,
+    "passes_opposite": 2
+   },
+   {
+    "kind": "both directions",
+    "lap_s_m": [
+     1180.0369146678465,
+     1307.0011732723403
+    ],
+    "from": [
+     140.9047088623047,
+     137.01998901367188
+    ],
+    "to": [
+     14.03038215637207,
+     137.97216796875
+    ],
+    "passes_same": 2,
+    "passes_opposite": 2
+   }
+  ]
+ },
+ "reserved": {
+  "route": "main",
+  "waypoints": [
+   248,
+   299
+  ],
+  "planned_m": 323.5597394713657,
+  "from": [
+   -88.53,
+   58.91
+  ],
+  "to": [
+   1.66,
+   -80.27
+  ]
+ },
+ "reverse": {
+  "from": [
+   -6.375594139099121,
+   -75.21653747558594
+  ],
+  "to": [
+   -77.96662902832031,
+   48.547889709472656
+  ],
+  "path_m": 288.59716382481366,
+  "drive_s": 37.6799991580001,
+  "speed_max_mps": 8.110080182257088,
+  "legs": [
+   {
+    "leg": "southbound, x \u2248 -10 to -7",
+    "length_m": 43.5,
+    "nearest_m": [
+     8.001158494467749,
+     10.937716900792314,
+     11.208279723602622
+    ],
+    "heading_diff_median_deg": 176.7792510986328
+   },
+   {
+    "leg": "westbound, y \u2248 -132 to -129",
+    "length_m": 46.0,
+    "nearest_m": [
+     3.069606084887137,
+     3.581279561787065,
+     5.210483708561434
+    ],
+    "heading_diff_median_deg": 178.04488372802734
+   },
+   {
+    "leg": "northbound, x \u2248 -78 to -73",
+    "length_m": 171.0,
+    "nearest_m": [
+     10.518629676156696,
+     10.847899849924579,
+     14.004308632146383
+    ],
+    "heading_diff_median_deg": 178.95052337646484
+   }
+  ],
+  "corners_m": 28.5,
+  "corners_nearest_min_m": 3.509139385154909,
+  "corners_heading_diff_min_deg": 126.44202423095703,
+  "within_3m_pct": 0.0,
+  "same_direction_pct": 0.0,
+  "coverage_pct": 100.0,
+  "road_points_reverse": {
+   "median": 90.0,
+   "min": 68
+  },
+  "road_points_mapped_lanes": {
+   "median": 111.0,
+   "min": 13
+  },
+  "pass": true
+ }
+}
