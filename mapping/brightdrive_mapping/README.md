@@ -4,6 +4,93 @@ Mapping backend for BrightDrive: keyframes from a LiDAR-inertial front-end, a GT
 GNSS and loop-closure factors, and the georeferenced map. FAST-LIO (OmerMersin/FAST_LIO_OUSTER @ 8ffac51) is the
 front-end; it is cloned unmodified in the Docker image and is not part of this package. Everything here is mine.
 
+## Requirements
+
+The mapping section of the task PDF, one row per bullet, with the section here that answers it:
+
+| Requirement | Answered in | In short |
+|---|---|---|
+| A mapping drive over an urban route with overlapping passes, and a road section reserved for reverse-direction localization | [Mapping drive](#mapping-drive) | the Town03 loop twice, 3 914 m, 98.5 % driven twice; reserved waypoints 248 to 299: same direction 0 %, coverage 100 %, heading difference 177 to 179° |
+| The map built from my own pose estimate, no CARLA ground truth as input | [Purpose and input contract](#purpose-and-input-contract), [Pipeline](#pipeline) | the backend reads `/Odometry`, `/cloud_registered_body` and `/gnss/fix` only; ground truth goes to `eval/` alone |
+| Open-source SLAM/LIO allowed; the ROS 2 integration, frames, configuration and validation are my own | [Pipeline](#pipeline), top-level README "What I wrote vs what I used" | FAST-LIO2 unmodified at 8ffac51; the pose graph, GNSS and loop factors, map assembly, configuration, launch, DUFOMap integration and `eval/` are mine |
+| The map aligned to a documented global / CARLA / OpenDRIVE frame, with the transform chain | [Frames and extrinsics](#frames-and-extrinsics), [map.yaml contract](#mapyaml-contract) | `map` = SphericalMercator of Town03's `<geoReference>` = CARLA's world with y flipped; `T_map_origin` estimated from GNSS; APE 0.047 m without alignment |
+| The configured LiDAR-to-base_link transform and the frame assumptions, documented | [Frames and extrinsics](#frames-and-extrinsics) | LiDAR at (0, 0, 1.9) m, level; IMU = base_link; antenna at (0, 0, 1.8) m |
+| Map quality against a CARLA ground-truth reference map: one relative and one absolute metric | [Results](#results) | absolute: APE 0.047 m RMSE, map → reference 0.084 m mean; relative: RPE 0.014 m over 1 m and 0.126 m over 100 m |
+| Dynamic vehicles do not permanently contaminate the static map, or the limitation and its mitigation are documented | [Dynamic objects](#dynamic-objects), [Known limitations](#known-limitations--future-work) | DUFOMap removes the cars' traces (0.82 % of the raw points); its failure mode, road surface under the cars, and the ground protection that would fix it |
+
+## Pipeline
+
+```mermaid
+%%{init: {"theme": "neutral"}}%%
+flowchart LR
+  SIM["CARLA 0.9.15<br/>scenario mapping"] --> BAG[("mapping bag")]
+  BAG -- "/points_raw, /imu/data" --> FL["FAST-LIO2<br/>unmodified"]
+  FL -- "/Odometry<br/>/cloud_registered_body" --> BE["backend_node<br/>keyframes · iSAM2<br/>GNSS · loop closure"]
+  BAG -- "/gnss/fix" --> BE
+  BE -- "save_map" --> RAW["town03.pcd · map.yaml<br/>keyframes/ · trajectories"]
+  RAW --> DF["dynamic_filter.py<br/>DUFOMap"]
+  DF --> STATIC["town03_static.pcd<br/>town03_static.yaml"]
+  STATIC --> LOC["localization"]
+  subgraph EVAL["eval/: ground truth, evaluation only"]
+    GT["gt_to_tum.py<br/>gt_map_builder.py"] --> ME["mapping_eval.py<br/>APE · RPE · cloud to cloud"]
+    RC["check_reverse_section.py"]
+  end
+  BAG -.->|"/eval/ground_truth"| GT
+  BAG -.->|"/eval/ground_truth"| RC
+  RAW -.-> ME
+  STATIC -.-> ME
+  STATIC -.-> RC
+```
+
+The results below replay `fastlio_run_20261105_133549`: FAST-LIO's outputs recorded on the raw mapping bag
+`mapping_20261105_070252`, with its `/gnss/fix` and ground truth, so every backend run sees the same input
+("How to run" has both ways). Ground truth reaches `eval/` only (dashed).
+
+## Mapping drive
+
+The map comes from scenario `mapping` of `sim/config/sim.yaml` (`{laps: 2, traffic: 10}`), recorded as
+`mapping_20261105_070252`. Measured values are from its ground truth.
+
+- **Route:** (100, -4) → (150, 70) → (90, 137) → (-50, 137) → (-90, 60) → (-50, -131) → (-2, -80) and back to the
+  start, in map-frame metres. `sim/scenarios/make_route.py` fills in the roads between: 325 waypoints, 1 984 m per
+  lap, many 90° turns and a roundabout.
+- **Laps:** 2, so 2 × 1 984 m planned; 3 914 m driven in 569 s (the car cuts the corners).
+- **Speed:** 8 m/s target, turns included; median 7.9 m/s, max 8.3 m/s, 52 s standing still in total along the way.
+- **Traffic:** 10 Traffic Manager cars started near the route; red lights ignored, clear weather, GNSS noise 0.3 m.
+
+**Overlaps.** Every position of the first lap is compared with the whole drive. 98.5 % of the loop is driven twice
+in the same lane, once per lap; the other 1.5 % is one 12 m piece where two parts of the loop share a lane, driven
+three or four times. Two streets get extra passes on another lane: the east street (x ≈ 1 to 16, y -120 to -11,
+112 m) four times northbound in its two lanes, and the top street (y ≈ 131 to 138, x 14 to 141, 125 m) twice in
+each direction. No stretch of the loop is driven the other way in the same lane.
+
+**Reserved section.** Waypoints 248 to 299 of route `main` (route points 5 → 6 → 7, two 90° turns): 324 m planned,
+from (-88.5, 58.9) to (1.7, -80.3), driven forward only during mapping. Scenario `reverse_reuse` drives it the other
+way on the opposite lanes (route `reverse_section`, `snap_across_median`): 289 m in 37.7 s from (-6.4, -75.2) to
+(-78.0, 48.5), of the 304.5 m planned, because the scenario ends about 10 m before the last waypoint.
+
+| Leg of the reverse drive | Length [m] | Nearest mapping point min / median / max [m] | Heading difference, median |
+|---|---|---|---|
+| east street (x ≈ -10 to -7), southbound | 44 | 8.0 / 10.9 / 11.2 | 177° |
+| south street (y ≈ -132 to -129), westbound | 46 | 3.1 / 3.6 / 5.2 | 178° |
+| west street (x ≈ -78 to -73), northbound | 171 | 10.5 / 10.8 / 14.0 | 179° |
+| corners | 28 | at least 3.5 | at least 126° |
+
+**Proof.** Same direction 0 %: no position of the reverse drive has a mapping sample within 3 m heading within 30°
+of it. Coverage 100 %: every position has at least 25 road points of `town03_static.pcd` within 1 m (median 90,
+minimum 68; 111 on the lanes the mapping car drove), so the map holds the reverse lanes. A trajectory distance
+cannot show that coverage: driving a road the other way means driving its other lanes, 3.5 m (one lane) to 14 m
+(across a median) from where the mapping car drove, and the LiDAR (100 m range) mapped them from there.
+
+![The mapping drive (blue) and the reverse_reuse drive (orange) from ground truth; the reverse drive runs on the opposite lanes of the reserved section](../../eval/results/mapping/reverse_vs_mapping.png)
+
+```
+docker compose run --rm --no-deps -T loc python3 eval/check_reverse_section.py \
+    /bags/mapping_20261105_070252 /bags/reverse_reuse_20261107_153511 --map-yaml /maps/town03_static.yaml --out eval/results/mapping
+```
+
+Exit 0 when both checks hold; it writes `reverse_section.md`, `reverse_section.json` and the figure.
+
 ## Purpose and input contract
 
 The backend subscribes to three topics and needs nothing else:
@@ -23,6 +110,40 @@ every 5 s (both only while subscribed), the `/mapping/save_map` service, and the
 (Eigen, GTSAM, PCL, GeographicLib);
 `backend_node.cpp` is the only ROS code. Frames: `map` → `origin_frame` (this backend: georeference and loop
 correction) → the front-end's own frames. GNSS and loop closure are each a YAML switch.
+
+## Frames and extrinsics
+
+Every frame is REP-103: x forward (or east), y left (or north), z up. CARLA's own y points right; the sim bridge
+flips y (and pitch, yaw) once, so every topic and file here is already in ROS axes.
+
+| Frame | Meaning | Defined by |
+|---|---|---|
+| `map` | the map's frame: CARLA's world with y flipped, which is exactly what SphericalMercator gives for Town03's `<geoReference>` (lat0 = lon0 = 0); x east, y north | `map.yaml` `map.frame` and `map.projection` |
+| `fastlio_origin` | the front-end's fixed frame: the IMU pose when FAST-LIO started, not gravity aligned | `origin_frame`; the backend publishes TF `map → fastlio_origin` (`T_map_origin`) once GNSS is aligned |
+| `fastlio_odom`, `fastlio_imu` | FAST-LIO's own: a static identity below `fastlio_origin`, and the IMU body it estimates | `fastlio_carla.yaml` `frames` |
+| `base_link` | the car: centre of the car on the ground | `sim/config/sensors.yaml` |
+| `lidar`, `imu`, `gnss` | the sensors, children of `base_link` | `/tf_static` from `sensors.yaml` |
+
+Extrinsics, `base_link` → sensor from `sim/config/sensors.yaml`. They are exact in simulation, so nothing estimates
+them:
+
+| Sensor | xyz [m] | rpy [deg] | Where mapping uses it |
+|---|---|---|---|
+| LiDAR | (0, 0, 1.9) | (0, 0, 0) | FAST-LIO `extrinsic_T` / `extrinsic_R`, LiDAR in the IMU frame; `extrinsic_est_en: false` |
+| IMU | (0, 0, 0) | (0, 0, 0) | IMU = base_link, so FAST-LIO's body pose and every keyframe pose is a base_link pose |
+| GNSS antenna | (0, 0, 1.8) | (0, 0, 0) | `backend.yaml` `gnss_lever_arm` |
+
+Both nodes read these from their YAML files, not from `/tf_static`: a changed mount means editing `sensors.yaml`,
+`fastlio_carla.yaml` and `backend.yaml` together. The backend logs the values it loaded at startup.
+
+The transform chain of a map point and of a GNSS fix, with `X_k` the optimized keyframe pose in `fastlio_origin`:
+
+    p_map         = T_map_origin · X_k · p_body,      p_body = T_imu_lidar · p_lidar (FAST-LIO: /cloud_registered_body)
+    llaToMap(fix) = T_map_origin · X_k · lever_arm    (the GNSS factor)
+
+`T_map_origin` is the georeference the GNSS factors estimate: xyz (100.052, -4.467, 0.009) m, yaw -0.91° for the
+map in `/maps`. The ground truth (`/eval/ground_truth`, base_link in `map`) lives in the same frame, so APE needs no
+alignment.
 
 ## Class diagram
 
@@ -345,6 +466,28 @@ The rest of the file: `source` (bag, front-end and backend commits at launch tim
 accepted and rejected) and `gnss` (lever arm, factors, dropped, per-axis residual RMS of the final solve,
 alignment time). `T_map_origin` keeps full precision; the other numbers are rounded for reading.
 
+## Maps
+
+The maps are not in git (`*.pcd` is ignored). Data download: <DRIVE_LINK> (folder `maps/`, checksums in its
+`UPLOAD_LIST.md`). Put the four files into `MAPS_DIR` (`/var/tmp/brightdrive_maps` on the host, `/maps` in the
+containers); the commands here and the localizer's default `map_yaml` (`/maps/town03_static.yaml`) then work as
+written.
+
+| File | sha256 |
+|---|---|
+| `town03_static.pcd` | `afd4737cdbf0dd839c3f68369eed7c4bb9cf1abcb992b597ca5a0da05a30c1ae` |
+| `town03_static.yaml` | `4c040b14e085c373ea46f5ec2ce4958e702e5d32c8c42a38718b5e9f0ce265d2` |
+| `town03.pcd` | `8a02a3c12a85d2552572c39771f80ddfd29e27b6bb8128204ebb5c4b395ce557` |
+| `map.yaml` | `fa707a0651b4fd497ef0a58be07cbcd03eaf095f25d6aa0884bfe4bc77a37f10` |
+
+The alternative to the download is to rebuild all four from the FAST-LIO run bag `fastlio_run_20261105_133549`
+(4.7 GB, not in the download) in `/bags`, inside the `mapping` container after `colcon build` (next section).
+The loop count varies slightly between runs, so a rebuilt map does not match these checksums:
+
+```
+ros2 launch brightdrive_mapping backend_replay.launch.py bag:=/bags/fastlio_run_20261105_133549 save_dir:=/maps save_keyframes:=true run_dynamic_filter:=true
+```
+
 ## How the map is made
 
 ```
@@ -407,6 +550,23 @@ frame; GT is converted with `T_base_imu` before evaluation (`eval/gt_to_tum.py`,
 
 ## Results
 
+Map quality at a glance, for `town03_static.pcd` (the map localization uses) and the trajectory it was built from.
+How each number is computed: `eval/results/README.md`.
+
+| Metric | What it says | Value |
+|---|---|---|
+| APE RMSE / max, no alignment | global accuracy: keyframe positions against ground truth in the georeferenced frame | 0.047 / 0.184 m |
+| RPE over 1 m, RMSE | local consistency: error of the motion between poses 1 m apart | 0.014 m |
+| RPE over 100 m, RMSE | drift over 100 m of travel | 0.126 m |
+| map → reference, mean / p95 | accuracy: distance from each map point to the ground-truth reference map (0.2 m voxels bottom out near 0.1 m) | 0.084 / 0.252 m |
+| map points beyond 0.5 m | ghost or misplaced structure | 1.04 % |
+| reference → map, mean / p95 | completeness: distance from each reference point to the map | 0.124 / 0.368 m |
+| reference points beyond 0.5 m | structure the map is missing | 2.31 % |
+| GNSS residual RMS x / y / z | agreement with GNSS; at the 0.3 m noise, so no bias | 0.303 / 0.301 / 0.299 m |
+| loop closures accepted / rejected | how often the overlapping passes were matched | 273 / 5 |
+| removed as dynamic, raw points / cells | what DUFOMap took out ("Dynamic objects") | 0.82 % / 0.29 % |
+| reserved section: same direction / coverage | not mapped in the reverse direction, but mapped ("Mapping drive") | 0 % / 100 % |
+
 `/bags/fastlio_run_20261105_133549`: two laps of Town03, 572 s, 3 918 m of path, 11 442 scans at 20 Hz, 5 724 GNSS
 fixes at 10 Hz with 0.3 m noise, replayed with the launch above.
 
@@ -429,6 +589,10 @@ without `--align`:
 | z | 0.029 | 0.024 | 0.098 |
 
 Rotation RMSE 0.125° (yaw 0.056°); the per-axis mean error is under 1 cm, so `T_mo` carries no bias.
+
+![APE of the optimized keyframes along the path](../../eval/results/mapping/ape_xy.png)
+
+![APE over time: the pose graph (blue) against FAST-LIO placed in map once (orange); the flat stretch at 110 to 150 s is the car standing still, without keyframes](../../eval/results/mapping/ape_over_time.png)
 
 What each stage contributes, same bag, all against the IMU-frame ground truth (`eval/gt_to_tum.py`), 3 329
 keyframes matched at 1 ms; APE without `--align` except the labelled row; RPE translation RMSE at `--delta 1
@@ -476,6 +640,8 @@ keyframes and 26.3 M points, 78 s to integrate and 10 s to label on 20 threads:
 | `town03_static.pcd` | 4 953 789 (0.29 % fewer) | 0.084 / 0.252 | 0.124 / 0.368 |
 | removed, `town03_dynamic.pcd` | 26 654 cells, 215 216 raw points (0.82 %) | 0.063 / 0.145 | |
 
+![Distance from each point of town03_static.pcd to the ground-truth reference map](../../eval/results/mapping/c2c_hist.png)
+
 Two things the numbers say. First, cloud-to-cloud distance cannot measure the removal: the GT reference
 (`eval/gt_map_builder.py`, the raw scans at ground-truth poses) contains the same ten cars at every sweep time, so
 a removed car point has a reference neighbour as well; the unchanged 0.084 m says the filter did no harm, nothing
@@ -486,14 +652,16 @@ cell, where the space a car freed, inflated by d_p, reaches the road. Nothing ab
 removed and far ground is 2.5 % of it, so grazing-angle ground is not the issue here. `town03_dynamic_bev.png`
 shows the removals as streaks along the lanes the ten cars drove.
 
+![The static map from above (grey) and what DUFOMap removed (red); a 1400 px copy of town03_dynamic_bev.png](../../eval/results/mapping/town03_dynamic_bev.png)
+
 ## Known limitations / future work
 
 - **Ground protection before trusting the filter.** 82 % of what DUFOMap removed here is road. Label ground with
   Patchwork++ on each keyframe cloud and keep ground-labelled points whatever DUFOMap says before merging its
   result into the static map.
-- **The loop-detection rate depends on wall time.** The thread checks the latest keyframe at 1 Hz, so at speed
-  about one keyframe in six gets an ICP attempt and a half-speed replay finds twice as many loops (547 against 273).
-  Fix: push every new keyframe onto a queue the loop thread drains, instead of the timer.
+- **Loop detection runs on a 1 Hz timer** (as in LIO-SAM), so which keyframes get checked depends on drive and
+  replay speed (273 vs 547 loops on the same bag). Future work: trigger the check by distance travelled (e.g. every
+  5 m), keeping the cost bounded and the result reproducible.
 - **A mid-run `save_map` pauses ingest for a few seconds**: the lock is held for the batch solve and the write
   (2 to 3 s here). Scans queue and are processed afterwards; nothing was lost at 20 Hz with the 50-deep queue.
 - Rejected loop candidates are counted, not logged with their fitness.

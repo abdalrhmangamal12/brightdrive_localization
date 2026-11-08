@@ -7,6 +7,26 @@ CARLA 0.9.15 · Town03 · ROS 2 Humble · C++
 | Error-state Kalman filter (IMU + GNSS), pure C++ | in progress | [`eskf/`](eskf/README.md) |
 | Mapping: FAST-LIO (upstream) → pose graph, loop closure, GNSS factors (mine) → `map.pcd` | skeleton | [`mapping/brightdrive_mapping/`](mapping/brightdrive_mapping/README.md) |
 
+## Data
+
+Maps and bags are not in git. Data download: <DRIVE_LINK> (checksums in its `UPLOAD_LIST.md`). Put the files where
+the table says; the commands in the READMEs then work as written.
+
+| File | sha256 | Put it in |
+|---|---|---|
+| `maps/town03_static.pcd` | `afd4737cdbf0dd839c3f68369eed7c4bb9cf1abcb992b597ca5a0da05a30c1ae` | `MAPS_DIR` (`/var/tmp/brightdrive_maps`, `/maps` in the containers) |
+| `maps/town03_static.yaml` | `4c040b14e085c373ea46f5ec2ce4958e702e5d32c8c42a38718b5e9f0ce265d2` | `MAPS_DIR` |
+| `maps/town03.pcd` | `8a02a3c12a85d2552572c39771f80ddfd29e27b6bb8128204ebb5c4b395ce557` | `MAPS_DIR` |
+| `maps/map.yaml` | `fa707a0651b4fd497ef0a58be07cbcd03eaf095f25d6aa0884bfe4bc77a37f10` | `MAPS_DIR` |
+| `bags/`: the two submission bags | listed in `UPLOAD_LIST.md` | `BAGS_DIR` (`/var/tmp/brightdrive_bags`, `/bags` in the containers) |
+
+Instead of downloading the maps, rebuild them from the FAST-LIO run bag `fastlio_run_20261105_133549` (not in the
+download) inside the `mapping` container after `colcon build` ([mapping README, Maps](mapping/brightdrive_mapping/README.md#maps)):
+
+```
+ros2 launch brightdrive_mapping backend_replay.launch.py bag:=/bags/fastlio_run_20261105_133549 save_dir:=/maps save_keyframes:=true run_dynamic_filter:=true
+```
+
 ## Simulation
 
 CARLA 0.9.15 server and a ROS 2 Humble client, both in Docker: `compose.yaml` (all services), `compose.viz.yaml`
